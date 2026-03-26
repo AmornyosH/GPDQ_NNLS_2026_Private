@@ -108,4 +108,7 @@ def datasetPreprocessing(dataset, obs_tuned:bool=False, reward_tuned:bool=False)
     print(f"  Rewards mean/std: {np.mean(preprocessed_dataset['rewards']):.3f} / {np.std(preprocessed_dataset['rewards']):.3f}")
     print(f"  Actions min/max: {preprocessed_dataset['actions'].min(axis=0)} / {preprocessed_dataset['actions'].max(axis=0)}")
 
-    return preprocessed_dataset
+    return preprocessed_dataset, mean_obs, std_obs
+
+def normaliseObservation(observation, mean, std):
+    return (observation - mean) / std
