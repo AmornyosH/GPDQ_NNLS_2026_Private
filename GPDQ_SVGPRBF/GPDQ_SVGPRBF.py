@@ -13,15 +13,14 @@ if CUDA:
 # ============================ Pytorch Related ============================
 
 # ================================== Others ==================================
-from GPDQ_EXACTRBF import my_exact_gp
-from utility import my_utils, my_NN
+from utility import my_utils, my_NN, svgp
 from time import time
 import numpy as np
 import os
 
 class GaussianProcessDiffusionQlearning:
     def __init__(self, params_dict:dict, dataset:dict, ft:bool=False):
-        self.ALG = 'GPDQ_EXACTRBF'
+        self.ALG = 'GPDQ_SVGPRBF'
         self.ENV_CONFIG = params_dict['environment']
         self.STATE_DIM = int(params_dict['state_dim'])
         self.ACTION_DIM = int(params_dict['action_dim'])
@@ -39,7 +38,7 @@ class GaussianProcessDiffusionQlearning:
         self.initialiseDiffusionParams(schedule='vp', beta_min=1, beta_max=10, num_step=params_dict['diffusion_step'], dec_step=params_dict['diffusion_step'])
 
         # Initialise Paths
-        self.training_record_path = '/home/amornyos/PhD/Packages/resources/training_records/{}/{}_{}_training_records'.format(self.ALG, self.ALG, self.ENV_CONFIG)
+        self.training_record_path = '/home/amornyos/PhD/Packages/resources/training_records/{}/{}/{}_{}_training_records'.format(self.ALG, self.ENV_CONFIG, self.ALG, self.ENV_CONFIG)
         # self.training_checkpoint_path = '{:s}/training_records/{:s}_{:s}_checkpoint'.format(self.ALG, self.ALG, self.ENV_CONFIG)
         # self.evaluation_path = '{:s}/norm_eval_rewards_append'.format(self.ALG)
 
@@ -63,20 +62,21 @@ class GaussianProcessDiffusionQlearning:
 
         # ======================================= Create GP model. =======================================
         # Uncomment out the selected gp model type...
-        self.gp_model_type = 'exact'
-        # self.gp_model_type = 'sparse'
-        # best_dataset = my_utils.bestTrajExtraction(dataset=dataset) if dataset is not None else None
-        best_dataset = self.multiBestTrajExtraction(dataset=dataset, max_episode_steps=1000, top_k=5)
-        # best_dataset = my_utils.antMazeTrajExtraction(dataset=dataset, max_episode_steps=1000, top_k=100)
-        # best_dataset = my_utils.antMazeMultiTrajExtraction(dataset=dataset, max_episode_steps=2000, top_k=100)
-        # best_dataset = dataset
+        self.gp_model_type = 'sparse'
+        best_dataset = self.multiBestTrajExtraction(dataset=dataset, max_episode_steps=1000, top_k=10)
+        # Get inducing points
+        self.gp_num_inducing = params_dict['gp_num_inducing']
+        _indexes = np.linspace(start=0, stop=len(best_dataset['observations']), num=self.gp_num_inducing, endpoint=False, dtype=int)
 
-        if self.gp_model_type == 'exact':
-            self.gp_model = my_exact_gp.myExactGP(params_dict=params_dict, dataset=best_dataset, cuda=CUDA, parent_alg=self.ALG)
-        elif self.gp_model_type == 'sparse':
-            self.gp_model = my_svgp.mySVGP(params_dict=params_dict, dataset=best_dataset, cuda=CUDA, parent_alg=self.ALG)
-        else:
-            print('No gp model type. Please try "exact" or "sparse".')
+        self.gp_x_train = torch.tensor(best_dataset['observations'], dtype=torch.float32)
+        self.gp_y_train = torch.tensor(best_dataset['actions'], dtype=torch.float32)
+        self.gp_kernel = svgp.RBFKernel()
+        self.gp_model = svgp.SVGP(kernel=self.gp_kernel, 
+                                  inducing_pts=torch.tensor(best_dataset['observations'][_indexes], 
+                                                            dtype=torch.float32), 
+                                  noise=0.1)
+        self.gp_optimizer = torch.optim.Adam(params=self.gp_model.parameters(), lr=1e-02)
+        self.gp_loss_append = []
 
         # ======================================= Create/Load Training Record =======================================
         # Check for the training record file and the response from user...
@@ -99,13 +99,13 @@ class GaussianProcessDiffusionQlearning:
             self.epsilon_beh_loss_append = []
             self.q_1_loss_append = []
 
-            # # Load pretrained behaviour model
-            # _load_beh = torch.load(self.training_record_path+'_pretrained', map_location=torch.device('cpu' if not CUDA else 'cuda'))
-            # self.epsilon_beh.load_state_dict(_load_beh['epsilon_beh'])
-            # self.epsilon_optimizer.load_state_dict(_load_beh['epsilon_beh_optimizer'])
-            # # target network
-            # self.epsilon_beh_tar.load_state_dict(_load_beh['epsilon_beh'])
-            # self.epsilon_optimizer.load_state_dict(_load_beh['epsilon_beh_optimizer'])
+            # Load pretrained behaviour model
+            _load_beh = torch.load(self.training_record_path+'_pretrained', map_location=torch.device('cpu' if not CUDA else 'cuda'))
+            self.epsilon_beh.load_state_dict(_load_beh['epsilon_beh'])
+            self.epsilon_optimizer.load_state_dict(_load_beh['epsilon_beh_optimizer'])
+            # target network
+            self.epsilon_beh_tar.load_state_dict(_load_beh['epsilon_beh'])
+            self.epsilon_optimizer.load_state_dict(_load_beh['epsilon_beh_optimizer'])
 
         # --------------------------- Loading, continue training of models
         elif _ans_1 == 'y' or _ans_1=='Y' or _ans_1=='Yes' or _ans_1=='YES':
@@ -151,33 +151,28 @@ class GaussianProcessDiffusionQlearning:
         else:
             _loaded_training_record = torch.load(path, map_location=torch.device('cpu' if not CUDA else 'cuda'))
         _gp_state_dict = _loaded_training_record['gp_state_dict']
+        self.gp_model.log_noise = torch.nn.Parameter(_gp_state_dict['log_noise'])
+        self.gp_model.kernel.log_lengthscale = torch.nn.Parameter(_gp_state_dict['kernel.log_lengthscale'])
+        self.gp_model.kernel.log_outputscale = torch.nn.Parameter(_gp_state_dict['kernel.log_outputscale'])
+        self.gp_x_train = _loaded_training_record['gp_x_train']
+        self.gp_y_train = _loaded_training_record['gp_y_train']
 
-        # self.gp_model.sigma_p = torch.nn.Parameter(_gp_state_dict['sigma_p'], requires_grad=True)
-        self.gp_model.sigma_n = torch.nn.Parameter(_gp_state_dict['sigma_n'], requires_grad=True)
-        self.gp_model.ell = torch.nn.Parameter(_gp_state_dict['ell'], requires_grad=True)
-        # self.gp_model.ell_1 = torch.nn.Parameter(_gp_state_dict['ell_1'], requires_grad=True)  # Angles
-        # self.gp_model.ell_2 = torch.nn.Parameter(_gp_state_dict['ell_2'], requires_grad=True)  # Velocity
-        # self.gp_model.ell_3 = torch.nn.Parameter(_gp_state_dict['ell_3'], requires_grad=True)  # Angular Velocity
-        # self.gp_model.ell_4 = torch.nn.Parameter(_gp_state_dict['ell_4'], requires_grad=True)  # z-coordinate
-        self.gp_model.x_train = _loaded_training_record['gp_x_train']
-        self.gp_model.y_train = _loaded_training_record['gp_y_train']
+        self.gp_model.q_mean = torch.nn.Parameter(_gp_state_dict['q_mean'])
+        self.gp_model.q_log_diag = torch.nn.Parameter(_gp_state_dict['q_log_diag'])
+        self.gp_model.q_lower = torch.nn.Parameter(_gp_state_dict['q_lower'])
+        self.gp_model.Z = torch.nn.Parameter(_loaded_training_record['gp_z_train'])
 
-        # self.gp_model.q_mean = torch.nn.Parameter(_gp_state_dict['q_mean'], requires_grad=True)
-        # self.gp_model.q_var = torch.nn.Parameter(_gp_state_dict['q_var'], requires_grad=True)
-        # # self.gp_model.q_var = torch.clip(_gp_state_dict['q_var'], min=0.1)
-        # self.gp_model.z_train = torch.nn.Parameter(_loaded_training_record['gp_z_train'], requires_grad=True)
-
-        self.gp_model.optimizer.load_state_dict(_loaded_training_record['gp_optimizer'])
+        self.gp_optimizer.load_state_dict(_loaded_training_record['gp_optimizer'])
 
         # self.gp_model.cov_optimizer.load_state_dict(_loaded_training_record['gp_cov_optimizer'])
         # self.gp_model.ind_optimizer.load_state_dict(_loaded_training_record['gp_ind_optimizer'])
 
         # self.gp_model.K_mm = self.gp_model.rbfKernel(X_1=self.gp_model.z_train, X_2=self.gp_model.z_train, noise=True)
         # self.gp_model.L_mm = torch.cholesky(self.gp_model.K_mm, upper=False)
-        if self.gp_model.kernel_fn == 'rbf':
-            self.gp_model.K = self.gp_model.rbfKernel(X_1=self.gp_model.x_train, X_2=self.gp_model.x_train, noise=True)
-        elif self.gp_model.kernel_fn == 'matern':
-            self.gp_model.K = self.gp_model.maternKernel(X_1=self.gp_model.x_train, X_2=self.gp_model.x_train, noise=True)
+        # if self.gp_model.kernel_fn == 'rbf':
+        #     self.gp_model.K = self.gp_model.rbfKernel(X_1=self.gp_model.x_train, X_2=self.gp_model.x_train, noise=True)
+        # elif self.gp_model.kernel_fn == 'matern':
+        #     self.gp_model.K = self.gp_model.maternKernel(X_1=self.gp_model.x_train, X_2=self.gp_model.x_train, noise=True)
         # self.gp_model.L_mm = torch.linalg.cholesky(self.gp_model.K_mm, upper=False)
 
     # Diffusion model's parameters initialisation Method
@@ -332,7 +327,9 @@ class GaussianProcessDiffusionQlearning:
         _var_r = []
         # Predict guidance params
         if guide:
-            _mu_r, _var_r = self.predictGP(x_test=inputs)
+            # _mu_r, _var_r = self.predictGP(x_test=inputs)
+            _mu_r, _var_r = self.gp_model.predict(inputs)
+            # print(_mu_r, _var_r)
             self.mu_r = _mu_r
             self.mu_r = torch.clip(input=_mu_r, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
             self.var_r = _var_r
@@ -355,13 +352,19 @@ class GaussianProcessDiffusionQlearning:
             # Guided term
             if guide:
                 if i != (self.DIFFU_STEPS-1):
-                    _cov_dp = self.beta[rev_pos] * torch.eye(size) 
-                    _cov_gp = _cov_dp
+                    # _cov_dp = self.beta[rev_pos] * torch.eye(size) 
+                    _cov_dp = self.beta[rev_pos] * torch.ones([size, 6])
+                    # _cov_gp = _cov_dp
                 else:
-                    _cov_dp = 0. * torch.eye(size)
-                    _cov_gp = torch.clip(self.var_r, min=self.beta[rev_pos]) * torch.eye(size, dtype=torch.float32)
-                _inv_cov_gp = torch.linalg.inv(_cov_gp)
-                x_t_m_1 += -torch.matmul(torch.matmul(_cov_dp, _inv_cov_gp), x_t_m_1 - self.mu_r)
+                    # _cov_dp = 0. * torch.eye(size)
+                    _cov_dp = 0. * torch.ones([size, 6])
+                    # _cov_gp = torch.clip(self.var_r, min=self.beta[rev_pos]) * torch.eye(size, dtype=torch.float32)
+                # _inv_cov_gp = torch.linalg.inv(_cov_gp)
+
+                _cov_gp = self.var_r
+                _inv_cov_gp = torch.clip((1 / _cov_gp), min=self.beta[rev_pos])
+                # x_t_m_1 += -torch.matmul(torch.matmul(_cov_dp, _inv_cov_gp), x_t_m_1 - self.mu_r)
+                x_t_m_1 += -torch.mul(torch.mul(_cov_dp, _inv_cov_gp), x_t_m_1 - self.mu_r)
                 x_t_m_1 = torch.clip(x_t_m_1, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
 
             if i == (_diffu_steps-1):
@@ -541,7 +544,7 @@ class GaussianProcessDiffusionQlearning:
             start_time = time()
             diffu_loss_accum = 0
             q_1_loss_accum = 0
-            gp_mean_loss_accum = 0
+            gp_loss_accum = 0
 
             # Get shuffle indices
             _sampling_indices = torch.randperm(buffer_size)
@@ -582,18 +585,11 @@ class GaussianProcessDiffusionQlearning:
                 # Update target networks
                 _updateTargetNetworks()
 
+                # Increase gradient step size
                 self.gradient_step += 1
-
-                # if self.gradient_step % 10000 == 0:
-                #     # Alter the observation
-                #     self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
 
                 # Train GP and save checkpoint every 10k step
                 if (self.gradient_step % 10000) == 0:
-                    # # Alter the observation
-                    # self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
-                    # # Train the gp
-                    # _gp_loss = self.gp_model.myTraining(total_epoch=24, ft=False)
                     # Save checkpoint
                     self.recordSaving(path=self.training_record_path+'_{:d}'.format(self.gradient_step))
 
@@ -602,36 +598,30 @@ class GaussianProcessDiffusionQlearning:
 
             # Train the gp
             if (self.training_record % 1) == 0:
-                _gp_loss = self.gp_model.myTraining(total_epoch=10 if self.gp_model_type == 'sparse' else 10, ft=False)
+                # _gp_loss = self.gp_model.myTraining(total_epoch=10 if self.gp_model_type == 'sparse' else 10, ft=False)
+                _gp_loss = self.trainSVGP(X_train=self.gp_x_train, y_train=self.gp_y_train, 
+                                          n_epochs=10, batch_size=self.MINIBATCH_SIZE)
+                # gp_loss_accum += _gp_loss.tolist()
 
             # Update Altered observation for every ... epoch.
             if self.training_record % 5 == 0:
-                self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
-                # self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train_org)
-                # _gp_loss = self.gp_model.myTraining(total_epoch=100, ft=False)
+                self.gp_y_train = self.getAlteredObservation(self.gp_x_train)
 
             # Append loss for recording.
             self.epsilon_beh_loss_append.append(diffu_loss_accum/_num_gradient_step)
             self.q_1_loss_append.append(q_1_loss_accum/_num_gradient_step)
-            # self.q_2_loss_append.append(q_2_loss_accum/_num_gradient_step)
+            self.gp_loss_append.append(gp_loss_accum/_num_gradient_step)
 
             # Print the status.
             print('Epoch: ', self.training_record,
                   ', Gradient_step: ', self.gradient_step, 
                   ', Diffu_loss: ', round(diffu_loss_accum/_num_gradient_step, 4),
                   ', Q1_loss: ', round(q_1_loss_accum/_num_gradient_step, 4),
-                  ', GP_loss: ', round(_gp_loss, 4),
+                  ', GP_loss: ', _gp_loss,
                   ', Time/Epoch: ', round(time()-start_time, 4))
 
             # Save the training_records
             self.recordSaving(path=self.training_record_path)
-
-            # Check for the breaking for evaluation.
-            if eval and self.training_record % 5 == 0:
-                # self.epsilon_beh.eval()
-                # self.q_1.eval()
-                # self.q_2.eval()
-                break
 
         # ========================== Training Loop End ==========================
 
@@ -640,6 +630,41 @@ class GaussianProcessDiffusionQlearning:
     def predictGP(self, x_test):
         _mean, _var = self.gp_model.predict(X_s=x_test)
         return _mean, _var
+    
+    def trainSVGP(self, 
+                  X_train: torch.Tensor, 
+                  y_train: torch.Tensor, 
+                  n_epochs: int = 500, 
+                  batch_size: int = 128, 
+                  print_every: int = 50,
+    ):
+        """Standard mini-batch training loop maximising ELBO."""
+        n_total   = X_train.shape[0]
+        losses    = []
+
+        for epoch in range(1, n_epochs + 1):
+            self.gp_model.train()
+
+            # Random mini-batch
+            idx   = torch.randperm(n_total)[:batch_size]
+            X_b   = X_train[idx]
+            y_b   = y_train[idx]
+
+            self.gp_optimizer.zero_grad()
+            loss = -self.gp_model.elbo(X_b, y_b, n_total)   # minimise negative ELBO
+            loss.backward()
+            self.gp_optimizer.step()
+
+            losses.append(loss.item())
+
+            # if epoch % print_every == 0:
+            #     print(f"Epoch {epoch:4d}/{n_epochs}  "
+            #         f"−ELBO = {loss.item():.4f}  "
+            #         f"noise = {self.gp_model.noise.item():.4f}  "
+            #         f"ls = {self.gp_model.kernel.lengthscale.item():.4f}  "
+            #         f"os = {self.gp_model.kernel.outputscale.item():.4f}")
+
+        return np.mean(losses)
     # ===================================== GP model sections end =====================================
     # Training Record Saving Method
     def recordSaving(self, path:str):
@@ -654,8 +679,9 @@ class GaussianProcessDiffusionQlearning:
                     'epsilon_beh_optimizer': self.epsilon_optimizer.state_dict(), 
                     'q_1_optimizer': self.q_1_optimizer.state_dict(),
                     'gp_state_dict': self.gp_model.state_dict(), 
-                    'gp_loss_append': self.gp_model.mll_append,
-                    'gp_x_train': self.gp_model.x_train, 
-                    'gp_y_train': self.gp_model.y_train, 
-                    'gp_optimizer': self.gp_model.optimizer.state_dict(),
+                    'gp_loss_append': self.gp_loss_append,
+                    'gp_z_train': self.gp_model.Z, 
+                    'gp_x_train': self.gp_x_train,
+                    'gp_y_train': self.gp_y_train, 
+                    'gp_optimizer': self.gp_optimizer.state_dict(),
                     }, path)

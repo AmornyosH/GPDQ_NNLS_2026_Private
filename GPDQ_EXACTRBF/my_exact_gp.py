@@ -38,10 +38,6 @@ class myExactGP(torch.nn.Module):
         # self.sigma_p = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=True)
         self.sigma_n = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=True)
         self.ell = torch.nn.Parameter(torch.ones(size=[1, self.x_dim], dtype=torch.float32), requires_grad=True)
-        # self.ell_1 = torch.nn.Parameter(torch.ones(size=[1, 4], dtype=torch.float32), requires_grad=True)  # Angles
-        # self.ell_2 = torch.nn.Parameter(torch.ones(size=[1, 2], dtype=torch.float32), requires_grad=True)  # Velocity
-        # self.ell_3 = torch.nn.Parameter(torch.ones(size=[1, 4], dtype=torch.float32), requires_grad=True)  # Angular Velocity
-        # self.ell_4 = torch.nn.Parameter(torch.ones(size=[1, 1], dtype=torch.float32), requires_grad=True)  # z-coordinate
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-02)
 

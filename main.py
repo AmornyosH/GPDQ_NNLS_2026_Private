@@ -1,5 +1,6 @@
 # =================================================== Modules ==================================================
 from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning 
+# from GPDQ_SVGPRBF.GPDQ_SVGPRBF import GaussianProcessDiffusionQlearning
 from utility import dataset_preprocessing
 
 import os
@@ -30,9 +31,9 @@ def addArguments(parser):
 
 def getParamsDict(env):
     return {'simple_sine' : {'environment': 'simple_sine', 'horizon': (4*np.pi//0.05)//2, 'gp_num_sample': 125, 'gp_num_inducing': 25, 'gp_batch_size': 25, 'state_dim': 1, 'action_dim': 1, 'normalise_reward': False,'diffusion_step': 25, 'task': TASK}, 
-            'walker2d-medium-expert-v2' :  {'environment': 'walker2d-medium-expert-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
+            'walker2d-medium-expert-v2' :  {'environment': 'walker2d-medium-expert-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
             'walker2d-medium-replay-v2' :  {'environment': 'walker2d-medium-replay-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 100, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
-            'walker2d-medium-v2' :  {'environment': 'walker2d-medium-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1024, 'gp_batch_size': 1024, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
+            'walker2d-medium-v2' :  {'environment': 'walker2d-medium-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 1024, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
             'walker2d-random-v2' :  {'environment': 'walker2d-medium-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
             'walker2d-expert-v2' :  {'environment': 'walker2d-expert-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
             'hopper-medium-expert-v2' :  {'environment': 'hopper-medium-expert-v2', 'horizon': 1000, 'gp_num_sample': 2000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 11, 'action_dim': 3, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
@@ -245,27 +246,9 @@ elif args.task == 'beh_training':
 
 # ---------------------------------------------- Testing -------------------------------------------------------
 elif args.task == 'testing':
-    # # Start environment
-    # _reward_append = []
-    # _folder_path = 'GPDQ_exact_2/training_records/hopper-medium-v2'
-    # for filename in os.listdir(_folder_path):
-    #     _file_path = os.path.join(_folder_path, filename)
-    #     agent.loadTrainingRecord(path=_file_path)
-    #     # agent.gp_model.loadTrainingRecord(path=agent.gp_model.training_record_path, cuda=agent.cuda)
-    #     _, norm_reward_append = evaluatingMuJoCo(eval_times=5)
-    #     _reward_append.append(norm_reward_append)
-    # np.save(agent.evaluation_path, _reward_append) # save the evaluation rewards.
-    
-    j = 1000000 # now at 405
-    # j = 1100000
+    j = 600000
     _reward_append = []
     while j <= 2000000:
-        # if j >= 256:
-        #     _increment = 1
-        # elif j == 250:
-        #     _increment = 6
-        # else:
-        #     _increment = 10
         _increment = 10000
         agent.loadTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
         agent.loadGPTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
@@ -273,46 +256,7 @@ elif args.task == 'testing':
         _, norm_reward_append = evaluatingMuJoCo(eval_times=5)
         _reward_append.append(norm_reward_append)
         j += _increment
-        # if j == 70:
-        #     j = 64
         # np.savez(agent.evaluation_path, _reward_append, j) # save the evaluation rewards.
-
-    # # Plot to see the selected trajectories
-    # x = agent.gp_model.x_train[:, 0].detach().cpu().numpy()
-    # y = agent.gp_model.x_train[:, 1].detach().cpu().numpy()
-    # sc = plt.scatter(x, y, c=np.arange(len(x)), cmap='viridis', s=50, edgecolor='k')
-    # # plt.plot(y, x)
-    # plt.colorbar(sc, shrink=0.8)
-    # # plt.scatter(x, y)
-    # # plt.xlim(0, 10)
-    # # plt.ylim(0, 10)
-    # plt.show()
-
-    # j = 10000 # now at 405
-    # _reward_append = []
-    # _increment = 10000
-    # while j <= 2000000:
-    #     agent.loadTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
-    #     agent.loadGPTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
-    #     # agent.gp_model.loadTrainingRecord(path=agent.gp_model.training_record_path+'_{:d}'.format(j), cuda=agent.cuda)
-    #     _, norm_reward_append = evaluatingMuJoCo(eval_times=5, step=j)
-    #     _reward_append.append(norm_reward_append)
-    #     j += _increment
-    #     # if j == 70:
-    #     #     j = 64
-    # np.save(agent.evaluation_path, _reward_append) # save the evaluation rewards.
-
-    # # agent.loadTrainingRecord(path=agent.training_record_path+'_255')
-    # _, norm_reward_append = evaluatingMuJoCo(eval_times=5)
-    # np.save(agent.evaluation_path, norm_reward_append) # save the evaluation rewards.
-
-    # checkpoint = '461'
-    # agent.loadTrainingRecord(path=agent.training_record_path+'_'+checkpoint)
-    # agent.loadGPTrainingRecord(path=agent.training_record_path+'_'+checkpoint)
-    # # agent.loadTrainingRecord(path=agent.training_record_path)
-    # # agent.gp_model.loadTrainingRecord(path=agent.gp_model.training_record_path+'_'+checkpoint, cuda=agent.cuda)
-    # # agent.gp_model.loadTrainingRecord(path=agent.gp_model.training_record_path, cuda=agent.cuda)
-    # _, _ = evaluatingMuJoCo(eval_times=10)
 # --------------------------------------------------------------------------------------------------------------
 
 
