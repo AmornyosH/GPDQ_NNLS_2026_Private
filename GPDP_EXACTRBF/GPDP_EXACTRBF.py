@@ -13,7 +13,7 @@ if CUDA:
 # ============================ Pytorch Related ============================
 
 # ================================== Others ==================================
-from GPDQ_EXACTRBF import my_exact_gp
+from GPDP_EXACTRBF import my_exact_gp
 from utility import my_utils, my_NN
 from time import time
 import numpy as np
@@ -21,7 +21,7 @@ import os
 
 class GaussianProcessDiffusionQlearning:
     def __init__(self, params_dict:dict, dataset:dict, ft:bool=False):
-        self.ALG = 'GPDQ_EXACTRBF'
+        self.ALG = 'GPDP_EXACTRBF'
         self.ENV_CONFIG = params_dict['environment']
         self.STATE_DIM = int(params_dict['state_dim'])
         self.ACTION_DIM = int(params_dict['action_dim'])
@@ -531,7 +531,7 @@ class GaussianProcessDiffusionQlearning:
 
         # Set models to training mode.
         self.epsilon_beh.train()
-        self.q_1.train()
+        # self.q_1.train()
         # self.q_2.train()
         self.gp_model.train()
 
@@ -553,16 +553,16 @@ class GaussianProcessDiffusionQlearning:
                 batch_reward_tensor = reward_buffer[_sampling_indices[0+(g*_batch_size):_batch_size+(g*_batch_size)]]
                 batch_next_state_tensor = next_state_buffer[_sampling_indices[0+(g*_batch_size):_batch_size+(g*_batch_size)]]
 
-                # --------------------------------- Temporal Difference Learning (Q-function) ---------------------------------
-                # Prepare data for q learning
-                _batch_next_action = self.predict(state=batch_next_state_tensor, size=_batch_size, guide=True, target=False).view(-1, self.ACTION_DIM)
-                # _batch_next_action = self.getAlteredObservation(batch_next_state_tensor)
-                y_true_1 = _getExpectedCumulativeReturn(inputs=torch.concat([batch_next_state_tensor, _batch_next_action], dim=1))
-                q_1_loss = _trainQ1Network(inputs=torch.concat([batch_state_tensor, batch_action_tensor], dim=1), y_true=y_true_1) # State-Action network (Q)
-                q_1_loss_accum += q_1_loss.tolist()
-                self.q_1_optimizer.zero_grad()
-                q_1_loss.backward(retain_graph=True)
-                self.q_1_optimizer.step()
+                # # --------------------------------- Temporal Difference Learning (Q-function) ---------------------------------
+                # # Prepare data for q learning
+                # _batch_next_action = self.predict(state=batch_next_state_tensor, size=_batch_size, guide=True, target=False).view(-1, self.ACTION_DIM)
+                # # _batch_next_action = self.getAlteredObservation(batch_next_state_tensor)
+                # y_true_1 = _getExpectedCumulativeReturn(inputs=torch.concat([batch_next_state_tensor, _batch_next_action], dim=1))
+                # q_1_loss = _trainQ1Network(inputs=torch.concat([batch_state_tensor, batch_action_tensor], dim=1), y_true=y_true_1) # State-Action network (Q)
+                # q_1_loss_accum += q_1_loss.tolist()
+                # self.q_1_optimizer.zero_grad()
+                # q_1_loss.backward(retain_graph=True)
+                # self.q_1_optimizer.step()
 
                 # --------------------------------- Diffusion Policy Learning ---------------------------------
                 # Prepare data for diffusion learning
@@ -595,22 +595,22 @@ class GaussianProcessDiffusionQlearning:
             if (self.training_record % 1) == 0:
                 _gp_loss = self.gp_model.myTraining(total_epoch=10 if self.gp_model_type == 'sparse' else 10, ft=False)
 
-            # Update Altered observation for every ... epoch.
-            if self.training_record % 5 == 0:
-                self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
-                # self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train_org)
-                # _gp_loss = self.gp_model.myTraining(total_epoch=100, ft=False)
+            # # Update Altered observation for every ... epoch.
+            # if self.training_record % 5 == 0:
+            #     self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
+            #     # self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train_org)
+            #     # _gp_loss = self.gp_model.myTraining(total_epoch=100, ft=False)
 
             # Append loss for recording.
             self.epsilon_beh_loss_append.append(diffu_loss_accum/_num_gradient_step)
-            self.q_1_loss_append.append(q_1_loss_accum/_num_gradient_step)
+            # self.q_1_loss_append.append(q_1_loss_accum/_num_gradient_step)
             # self.q_2_loss_append.append(q_2_loss_accum/_num_gradient_step)
 
             # Print the status.
             print('Epoch: ', self.training_record,
                   ', Gradient_step: ', self.gradient_step, 
                   ', Diffu_loss: ', round(diffu_loss_accum/_num_gradient_step, 4),
-                  ', Q1_loss: ', round(q_1_loss_accum/_num_gradient_step, 4),
+                #   ', Q1_loss: ', round(q_1_loss_accum/_num_gradient_step, 4),
                   ', GP_loss: ', round(_gp_loss, 4),
                   ', Time/Epoch: ', round(time()-start_time, 4))
 

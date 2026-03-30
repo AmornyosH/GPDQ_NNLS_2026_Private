@@ -1,6 +1,12 @@
 # =================================================== Modules ==================================================
-from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning 
+# from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning 
 # from GPDQ_SVGPRBF.GPDQ_SVGPRBF import GaussianProcessDiffusionQlearning
+# from GPDQ_EXACTNZMRBF.GPDQ_EXACTNZMRBF import GaussianProcessDiffusionQlearning
+# from GPDP_EXACTRBF.GPDP_EXACTRBF import GaussianProcessDiffusionQlearning
+# from GPDQ_DOUBLEQEXACTRBF.GPDQ_DOUBLEQEXACTRBF import GaussianProcessDiffusionQlearning
+# from GPDP_EXACTMATERN.GPDP_EXACTMATERN import GaussianProcessDiffusionQlearning
+# from GPDQ_EXACTMATERN.GPDQ_EXACTMATERN import GaussianProcessDiffusionQlearning
+from GPDQ_EXACTMATERN2.GPDQ_EXACTMATERN2 import GaussianProcessDiffusionQlearning
 from utility import dataset_preprocessing
 
 import os
@@ -115,8 +121,8 @@ def interactionMuJoCo(agent, seed, random:bool=False) -> float:
 
 def evaluatingMuJoCo(eval_times:int=10, step:int=0):
     _TEST_TIME = eval_times
-    _TEST_SEEDS = [2203+(n*(9**n)) for n in range(eval_times)]  # MuJoCo
-    # _TEST_SEEDS = [2203 + (n * 100) for n in range(eval_times)]
+    # _TEST_SEEDS = [2203+(n*(9**n)) for n in range(eval_times)]  # MuJoCo
+    _TEST_SEEDS = [2203 + (n * 100) for n in range(eval_times)]
     # _TEST_SEEDS = [2203+(n+(9**n)) for n in range(eval_times)]  # AntMaze
     # _TEST_SEEDS = [2203, 2212, 3486786604]
     # _TEST_SEEDS = [2212, 4390, 28447]  # Hopper Medium-Expert
@@ -246,9 +252,9 @@ elif args.task == 'beh_training':
 
 # ---------------------------------------------- Testing -------------------------------------------------------
 elif args.task == 'testing':
-    j = 600000
+    j = 10000
     _reward_append = []
-    while j <= 2000000:
+    while j <= 1000000:
         _increment = 10000
         agent.loadTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
         agent.loadGPTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
@@ -256,8 +262,22 @@ elif args.task == 'testing':
         _, norm_reward_append = evaluatingMuJoCo(eval_times=5)
         _reward_append.append(norm_reward_append)
         j += _increment
-        # np.savez(agent.evaluation_path, _reward_append, j) # save the evaluation rewards.
+        np.savez(agent.testing_record_path, _reward_append, j) # save the evaluation rewards.
 # --------------------------------------------------------------------------------------------------------------
 
+# ---------------------------------------------- Testing -------------------------------------------------------
+elif args.task == 'q_test':
+    j = 10000
+    _reward_append = []
+    while j <= 1000000:
+        _increment = 10000
+        agent.loadTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
+        agent.loadGPTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
+        q_best = torch.sum(agent.q_1(torch.concat([agent.gp_model.x_train, agent.gp_model.y_train_org], dim=1)))
+        q_pred = torch.sum(agent.q_1(torch.concat([agent.gp_model.x_train, agent.gp_model.y_train], dim=1)))
+        q_pred2 = torch.sum(agent.q_2(torch.concat([agent.gp_model.x_train, agent.gp_model.y_train], dim=1)))
+        print('q_best: ', q_best.tolist(), ', q_pred: ', q_pred.tolist(), ', q_pred2: ', q_pred2.tolist(), ', gradient_step: ', j)
+        j += _increment
+# --------------------------------------------------------------------------------------------------------------
 
 # ============================================== Main Program End ==============================================

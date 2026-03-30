@@ -40,7 +40,7 @@ class myExactGP(torch.nn.Module):
         self.sigma_n = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=True)
         self.ell = torch.nn.Parameter(torch.ones(size=[1, self.x_dim], dtype=torch.float32), requires_grad=True)
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-02)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-03)
 
         _start = 0
         # Select the first trajectory to be the main training matrices. 
@@ -56,28 +56,7 @@ class myExactGP(torch.nn.Module):
         X_1 = torch.tensor(X_1, dtype=torch.float32) if not torch.is_tensor(X_1) else X_1
         X_2 = torch.tensor(X_2, dtype=torch.float32) if not torch.is_tensor(X_2) else X_2
 
-        # # Angle kernel
-        # kernel_1 = torch.exp(-(torch.cdist(X_1[:, 1:5]/self.ell_1, X_2[:, 1:5]/self.ell_1)**2)/2)
-        # kernel_2 = torch.exp(-(torch.cdist(X_1[:, 5:7]/self.ell_2, X_2[:, 5:7]/self.ell_2)**2)/2)
-        # kernel_3 = torch.exp(-(torch.cdist(X_1[:, 7:11]/self.ell_3, X_2[:, 7:11]/self.ell_3)**2)/2)
-        # kernel_4 = torch.exp(-(torch.cdist(X_1[:, 0].reshape(-1, 1)/self.ell_4, X_2[:, 0].reshape(-1, 1)/self.ell_4)**2)/2)
-
-        # Angle kernel
-        # kernel_1 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 1:5]/self.ell_1, X_2[:, 1:5]/self.ell_1)**2)/2)
-        # kernel_2 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 5:7]/self.ell_2, X_2[:, 5:7]/self.ell_2)**2)/2)
-        # kernel_3 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 7:11]/self.ell_3, X_2[:, 7:11]/self.ell_3)**2)/2)
-        # kernel_4 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 0].reshape(-1, 1)/self.ell_4, X_2[:, 0].reshape(-1, 1)/self.ell_4)**2)/2)
-
-        # kernel = (self.sigma_p**2) * torch.exp(-(torch.cdist(X_1, X_2)**2)/(2*self.ell**2))
         kernel = (self.sigma_p**2) * torch.exp(-(torch.cdist(X_1/self.ell, X_2/self.ell)**2)/2)
-
-        # kernel = (self.sigma_p**2) * (kernel_1 + kernel_2 + kernel_3 + kernel_4)
-
-        # rbf_kernel = torch.exp(-(torch.cdist(X_1/self.ell, X_2/self.ell)**2)/2)
-        # # Periodic kernel
-        # period_kernel = torch.exp(-(2/(self.ell_p**2))*torch.sin(torch.pi*torch.cdist(X_1, X_2)/self.p)**2)
-        # # Combine kernels
-        # kernel = (self.sigma_p**2) * period_kernel * rbf_kernel
 
         if noise:
             # Noisy observation

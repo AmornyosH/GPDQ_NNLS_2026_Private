@@ -29,26 +29,29 @@ class myExactGP(torch.nn.Module):
         self.x_train_full = torch.tensor(_best_dataset['observations'], dtype=torch.float32)
         self.y_train_full = torch.tensor(_best_dataset['actions'], dtype=torch.float32)
         self.x_train_org = torch.tensor(self.x_train_full[:self.gp_training_size], dtype=torch.float32)
-        self.y_train_org = torch.tensor(self.y_train_full[:self.gp_training_size], dtype=torch.float32)
 
         self.cuda() if cuda else ...
 
         print('========== Create new GP record and models!')
         self.mll_append = []  # Loss storage
         # Create hyperparameters
-        # self.sigma_p = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=True)
+        self.sigma_p = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=True)
         self.sigma_n = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=True)
         self.ell = torch.nn.Parameter(torch.ones(size=[1, self.x_dim], dtype=torch.float32), requires_grad=True)
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-02)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-03)
 
         _start = 0
         # Select the first trajectory to be the main training matrices. 
         self.x_train = torch.tensor(self.x_train_full[0+_start:_start+self.gp_training_size, 0:self.x_dim], dtype=torch.float32)
         self.y_train = torch.tensor(self.y_train_full[0+_start:_start+self.gp_training_size], dtype=torch.float32)
 
+        # Mean function
+        self.mean = my_NN.MLP(input_dim=self.x_dim, output_dim=self.y_dim, tanh_output=True)
+        self.mean_optimizer = torch.optim.Adam(self.mean.parameters(), lr=3e-04)
+
         # Initialised training kernels (K, K_inv).
-        self.sigma_p = torch.tensor(1.0, dtype=torch.float32)  # Fixed signal variance to 1.00^2
+        # self.sigma_p = torch.tensor(1.0, dtype=torch.float32)  # Fixed signal variance to 1.00^2
         print('GP training sample size: ', len(self.x_train))
         self.K = self.rbfKernel(X_1=self.x_train, X_2=self.x_train, noise=True)
 
@@ -56,28 +59,7 @@ class myExactGP(torch.nn.Module):
         X_1 = torch.tensor(X_1, dtype=torch.float32) if not torch.is_tensor(X_1) else X_1
         X_2 = torch.tensor(X_2, dtype=torch.float32) if not torch.is_tensor(X_2) else X_2
 
-        # # Angle kernel
-        # kernel_1 = torch.exp(-(torch.cdist(X_1[:, 1:5]/self.ell_1, X_2[:, 1:5]/self.ell_1)**2)/2)
-        # kernel_2 = torch.exp(-(torch.cdist(X_1[:, 5:7]/self.ell_2, X_2[:, 5:7]/self.ell_2)**2)/2)
-        # kernel_3 = torch.exp(-(torch.cdist(X_1[:, 7:11]/self.ell_3, X_2[:, 7:11]/self.ell_3)**2)/2)
-        # kernel_4 = torch.exp(-(torch.cdist(X_1[:, 0].reshape(-1, 1)/self.ell_4, X_2[:, 0].reshape(-1, 1)/self.ell_4)**2)/2)
-
-        # Angle kernel
-        # kernel_1 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 1:5]/self.ell_1, X_2[:, 1:5]/self.ell_1)**2)/2)
-        # kernel_2 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 5:7]/self.ell_2, X_2[:, 5:7]/self.ell_2)**2)/2)
-        # kernel_3 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 7:11]/self.ell_3, X_2[:, 7:11]/self.ell_3)**2)/2)
-        # kernel_4 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 0].reshape(-1, 1)/self.ell_4, X_2[:, 0].reshape(-1, 1)/self.ell_4)**2)/2)
-
-        # kernel = (self.sigma_p**2) * torch.exp(-(torch.cdist(X_1, X_2)**2)/(2*self.ell**2))
         kernel = (self.sigma_p**2) * torch.exp(-(torch.cdist(X_1/self.ell, X_2/self.ell)**2)/2)
-
-        # kernel = (self.sigma_p**2) * (kernel_1 + kernel_2 + kernel_3 + kernel_4)
-
-        # rbf_kernel = torch.exp(-(torch.cdist(X_1/self.ell, X_2/self.ell)**2)/2)
-        # # Periodic kernel
-        # period_kernel = torch.exp(-(2/(self.ell_p**2))*torch.sin(torch.pi*torch.cdist(X_1, X_2)/self.p)**2)
-        # # Combine kernels
-        # kernel = (self.sigma_p**2) * period_kernel * rbf_kernel
 
         if noise:
             # Noisy observation
@@ -89,13 +71,16 @@ class myExactGP(torch.nn.Module):
         x_test = X_s[:, 0:self.x_dim]
         x_test = x_test.view(-1, self.x_dim)
 
+        _mean_x_train = self.mean(self.x_train)
+        _mean_x_test = self.mean(x_test)
+
         with torch.no_grad():
             _k_s = self.rbfKernel(X_1=self.x_train, X_2=x_test, noise=False)
             _k_ss = self.rbfKernel(X_1=x_test, X_2=x_test, noise=False)
             # Cholesky decomposition
             _L = torch.linalg.cholesky(self.K, upper=False)
-            _alpha = torch.linalg.solve_triangular(_L.T, torch.linalg.solve_triangular(_L, self.y_train, upper=False), upper=True)
-            _mean = (_k_s.T @ _alpha)
+            _alpha = torch.linalg.solve_triangular(_L.T, torch.linalg.solve_triangular(_L, (self.y_train - _mean_x_train), upper=False), upper=True)
+            _mean = _mean_x_test + (_k_s.T @ _alpha)
             _v = torch.linalg.solve_triangular(_L, _k_s, upper=False)
             _var = _k_ss - (_v.T @ _v)
 
@@ -115,9 +100,10 @@ class myExactGP(torch.nn.Module):
                 self.optimizer.zero_grad()
                 _k = self.rbfKernel(X_1=_batch_x, X_2=_batch_x, noise=True)
 
+                _mean = self.mean(self.x_train_org)
                 _L = torch.linalg.cholesky(_k, upper=False)
-                _alpha = torch.linalg.solve_triangular(_L.T, torch.linalg.solve_triangular(_L, _batch_y, upper=False), upper=True)
-                _mll = (-0.5 * (_batch_y).T @ _alpha) - \
+                _alpha = torch.linalg.solve_triangular(_L.T, torch.linalg.solve_triangular(_L, _batch_y - _mean, upper=False), upper=True)
+                _mll = (-0.5 * (_batch_y - _mean).T @ _alpha) - \
                        torch.sum(torch.log(torch.diagonal(_L))) - \
                        (_batch_size*torch.log(torch.tensor(2*torch.pi))/2)
 

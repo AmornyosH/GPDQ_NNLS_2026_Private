@@ -29,7 +29,6 @@ class myExactGP(torch.nn.Module):
         self.x_train_full = torch.tensor(_best_dataset['observations'], dtype=torch.float32)
         self.y_train_full = torch.tensor(_best_dataset['actions'], dtype=torch.float32)
         self.x_train_org = torch.tensor(self.x_train_full[:self.gp_training_size], dtype=torch.float32)
-        self.y_train_org = torch.tensor(self.y_train_full[:self.gp_training_size], dtype=torch.float32)
 
         self.cuda() if cuda else ...
 

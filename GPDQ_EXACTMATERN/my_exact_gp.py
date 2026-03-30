@@ -11,7 +11,7 @@ class myExactGP(torch.nn.Module):
         super().__init__()
         self.parent_alg = parent_alg
         self.alg = 'exact_gp'
-        self.kernel_fn = 'rbf'
+        self.kernel_fn = 'matern'
         self.param_dict = params_dict
         self.env = self.param_dict['environment']
 
@@ -50,34 +50,15 @@ class myExactGP(torch.nn.Module):
         # Initialised training kernels (K, K_inv).
         self.sigma_p = torch.tensor(1.0, dtype=torch.float32)  # Fixed signal variance to 1.00^2
         print('GP training sample size: ', len(self.x_train))
-        self.K = self.rbfKernel(X_1=self.x_train, X_2=self.x_train, noise=True)
+        self.K = self.maternKernel(X_1=self.x_train, X_2=self.x_train, noise=True)
 
-    def rbfKernel(self, X_1, X_2, noise=False):
+    def maternKernel(self, X_1, X_2, noise=False):
         X_1 = torch.tensor(X_1, dtype=torch.float32) if not torch.is_tensor(X_1) else X_1
         X_2 = torch.tensor(X_2, dtype=torch.float32) if not torch.is_tensor(X_2) else X_2
-
-        # # Angle kernel
-        # kernel_1 = torch.exp(-(torch.cdist(X_1[:, 1:5]/self.ell_1, X_2[:, 1:5]/self.ell_1)**2)/2)
-        # kernel_2 = torch.exp(-(torch.cdist(X_1[:, 5:7]/self.ell_2, X_2[:, 5:7]/self.ell_2)**2)/2)
-        # kernel_3 = torch.exp(-(torch.cdist(X_1[:, 7:11]/self.ell_3, X_2[:, 7:11]/self.ell_3)**2)/2)
-        # kernel_4 = torch.exp(-(torch.cdist(X_1[:, 0].reshape(-1, 1)/self.ell_4, X_2[:, 0].reshape(-1, 1)/self.ell_4)**2)/2)
-
-        # Angle kernel
-        # kernel_1 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 1:5]/self.ell_1, X_2[:, 1:5]/self.ell_1)**2)/2)
-        # kernel_2 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 5:7]/self.ell_2, X_2[:, 5:7]/self.ell_2)**2)/2)
-        # kernel_3 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 7:11]/self.ell_3, X_2[:, 7:11]/self.ell_3)**2)/2)
-        # kernel_4 = ((self.sigma_p**2)/4) * torch.exp(-(torch.cdist(X_1[:, 0].reshape(-1, 1)/self.ell_4, X_2[:, 0].reshape(-1, 1)/self.ell_4)**2)/2)
-
-        # kernel = (self.sigma_p**2) * torch.exp(-(torch.cdist(X_1, X_2)**2)/(2*self.ell**2))
-        kernel = (self.sigma_p**2) * torch.exp(-(torch.cdist(X_1/self.ell, X_2/self.ell)**2)/2)
-
-        # kernel = (self.sigma_p**2) * (kernel_1 + kernel_2 + kernel_3 + kernel_4)
-
-        # rbf_kernel = torch.exp(-(torch.cdist(X_1/self.ell, X_2/self.ell)**2)/2)
-        # # Periodic kernel
-        # period_kernel = torch.exp(-(2/(self.ell_p**2))*torch.sin(torch.pi*torch.cdist(X_1, X_2)/self.p)**2)
-        # # Combine kernels
-        # kernel = (self.sigma_p**2) * period_kernel * rbf_kernel
+ 
+        r_ard = torch.cdist(X_1/self.ell, X_2/self.ell)
+        sqrt3_r = TORCH_SQRT_3 * (r_ard)
+        kernel = (self.sigma_p**2) * (1 + sqrt3_r) * torch.exp(-sqrt3_r)
 
         if noise:
             # Noisy observation
@@ -90,8 +71,8 @@ class myExactGP(torch.nn.Module):
         x_test = x_test.view(-1, self.x_dim)
 
         with torch.no_grad():
-            _k_s = self.rbfKernel(X_1=self.x_train, X_2=x_test, noise=False)
-            _k_ss = self.rbfKernel(X_1=x_test, X_2=x_test, noise=False)
+            _k_s = self.maternKernel(X_1=self.x_train, X_2=x_test, noise=False)
+            _k_ss = self.maternKernel(X_1=x_test, X_2=x_test, noise=False)
             # Cholesky decomposition
             _L = torch.linalg.cholesky(self.K, upper=False)
             _alpha = torch.linalg.solve_triangular(_L.T, torch.linalg.solve_triangular(_L, self.y_train, upper=False), upper=True)
@@ -113,7 +94,7 @@ class myExactGP(torch.nn.Module):
                 _batch_y = self.y_train[g*_batch_size:_batch_size+(g*_batch_size)]
 
                 self.optimizer.zero_grad()
-                _k = self.rbfKernel(X_1=_batch_x, X_2=_batch_x, noise=True)
+                _k = self.maternKernel(X_1=_batch_x, X_2=_batch_x, noise=True)
 
                 _L = torch.linalg.cholesky(_k, upper=False)
                 _alpha = torch.linalg.solve_triangular(_L.T, torch.linalg.solve_triangular(_L, _batch_y, upper=False), upper=True)
@@ -129,7 +110,7 @@ class myExactGP(torch.nn.Module):
 
             _training_record += 1
             
-        self.K = self.rbfKernel(X_1=self.x_train, X_2=self.x_train, noise=True)
+        self.K = self.maternKernel(X_1=self.x_train, X_2=self.x_train, noise=True)
 
         return _mll.tolist()
 
