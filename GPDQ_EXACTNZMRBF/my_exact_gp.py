@@ -29,7 +29,7 @@ class myExactGP(torch.nn.Module):
         self.x_train_full = torch.tensor(_best_dataset['observations'], dtype=torch.float32)
         self.y_train_full = torch.tensor(_best_dataset['actions'], dtype=torch.float32)
         self.x_train_org = torch.tensor(self.x_train_full[:self.gp_training_size], dtype=torch.float32)
-
+        self.y_train_org = torch.tensor(self.y_train_full[:self.gp_training_size], dtype=torch.float32)
         self.cuda() if cuda else ...
 
         print('========== Create new GP record and models!')
@@ -39,7 +39,7 @@ class myExactGP(torch.nn.Module):
         self.sigma_n = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=True)
         self.ell = torch.nn.Parameter(torch.ones(size=[1, self.x_dim], dtype=torch.float32), requires_grad=True)
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-03)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-03)
 
         _start = 0
         # Select the first trajectory to be the main training matrices. 
@@ -47,7 +47,7 @@ class myExactGP(torch.nn.Module):
         self.y_train = torch.tensor(self.y_train_full[0+_start:_start+self.gp_training_size], dtype=torch.float32)
 
         # Mean function
-        self.mean = my_NN.MLP(input_dim=self.x_dim, output_dim=self.y_dim, tanh_output=True)
+        self.mean = my_NN.MLP_Relu(input_dim=self.x_dim, output_dim=self.y_dim, tanh_output=True)
         self.mean_optimizer = torch.optim.Adam(self.mean.parameters(), lr=3e-04)
 
         # Initialised training kernels (K, K_inv).

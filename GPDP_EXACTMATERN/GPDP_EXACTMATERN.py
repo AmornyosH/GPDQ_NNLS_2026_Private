@@ -145,8 +145,6 @@ class GaussianProcessDiffusionQlearning:
     def loadGPTrainingRecord(self, path=None):
         if path is None:
             _loaded_training_record = torch.load(self.training_record_path, map_location=torch.device('cpu' if not CUDA else 'cuda'))
-            # _loaded_training_record = torch.load(self.training_record_path+'_256', map_location=torch.device('cpu' if not CUDA else 'cuda'))
-            # _loaded_training_record = torch.load(self.training_checkpoint_path, map_location=torch.device('cpu' if not CUDA else 'cuda'))
         else:
             _loaded_training_record = torch.load(path, map_location=torch.device('cpu' if not CUDA else 'cuda'))
         _gp_state_dict = _loaded_training_record['gp_state_dict']
@@ -372,11 +370,18 @@ class GaussianProcessDiffusionQlearning:
                 # For q-network and diffusion, still using the original observation (x) not the latent.
                 _sampling_size = self.num_action_candidates
                 _state_n_tensor = torch.reshape(states[m], [-1, self.STATE_DIM]).repeat(_sampling_size, 1)
-                a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=False)
-                # a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=True)
+                _beh_a_n_tensor = torch.reshape(self.gp_model.y_train_org, [-1, self.ACTION_DIM]).repeat(_sampling_size, 1)
+                # a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=False)
+                a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=True)
 
                 # Get desired location (a, which max q)
                 _q_values = self.q_1(torch.concat([_state_n_tensor, a_i_m_1], dim=1)) 
+
+                # Get norm 
+                _norm_a = 3 * torch.sum(torch.square(_beh_a_n_tensor - a_i_m_1), dim=1)
+
+                # Get final Q-values
+                _q_values -= _q_values - _norm_a
 
                 _max_q_value = torch.max(_q_values)
                 _max_q_indices = torch.where(_q_values == _max_q_value)[0]

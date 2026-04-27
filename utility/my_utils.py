@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 
 def rangeConversion(input, new_min, new_max, old_min=-1, old_max=1) -> float:
     '''
@@ -253,5 +254,132 @@ def bestTrajExtraction(dataset: dict, max_episode_steps=1000, top_k=10):
         'terminals': stacked_terminals,
         'next_observations': stacked_next_obs,
     }
+
+    return best_dataset
+
+# Maze Problems Trajectory Extraction Method
+def mazeTrajExtraction(dataset:dict, max_episode_steps=1000, top_k=10):
+    print('Extract maze trajectories!!!!!')
+    observations = dataset['observations']
+    actions = dataset['actions']
+    rewards = dataset['rewards']
+    terminals = dataset['terminals']
+    next_observations = dataset['next_observations']
+
+    # Find the initial state first
+    num_samples = len(observations)
+
+    _init = np.array([0., 0.], dtype=float)
+    # _target = np.array([0.36824249435748196, 9.156394661806964], dtype=float)
+    # _target = np.array([1, 0.5], dtype=float)
+    # _target = np.array([5.5, 6.0], dtype=float)
+    _target = np.array([20.36824249435748, 21.156394661806964], dtype=float)
+    _threshold = 1.0
+
+    trajectories = []
+    current_trajectory = {
+        'observations': [],
+        'actions': [],
+        'rewards': [],
+        'next_observations': []
+    }
+    step_count = 0  # Track steps in episode (max 1000)
+
+    for i in range(num_samples):
+        # Current Euclidean Distance
+        _dist = np.linalg.norm(next_observations[i, :2]-_target)
+        _init_dist = np.linalg.norm(observations[i, 0:2]-_init)
+
+        if step_count == 0:
+            # if _init_dist < 1:
+            if _dist > _threshold and _init_dist < _threshold:   # <==== Use this condition for both antmaze-umaze datasets.
+                current_trajectory['observations'].append(observations[i])
+                current_trajectory['actions'].append(actions[i])
+                current_trajectory['rewards'].append(rewards[i])
+                current_trajectory['next_observations'].append(next_observations[i])
+                step_count += 1
+            else:
+                # Reset
+                current_trajectory = {
+                    'observations': [],
+                    'actions': [],
+                    'rewards': [],
+                    'terminals': [],
+                    'next_observations': []
+                }
+                step_count = 0
+        else:
+            current_trajectory['observations'].append(observations[i])
+            current_trajectory['actions'].append(actions[i])
+            current_trajectory['rewards'].append(rewards[i])
+            current_trajectory['next_observations'].append(next_observations[i])
+            step_count += 1
+
+            if terminals[i] or step_count >= max_episode_steps or i == num_samples-1:  
+            # if _dist < _threshold or step_count >= max_episode_steps or i == num_samples-1:  
+                # if terminals[i]:
+                if _dist < _threshold:
+                    trajectories.append({
+                        'observations': np.array(current_trajectory['observations']),
+                        'actions': np.array(current_trajectory['actions']),
+                        'rewards': np.array(current_trajectory['rewards']),
+                        'next_observations': np.array(current_trajectory['next_observations'])
+                    })
+                # Reset
+                current_trajectory = {
+                    'observations': [],
+                    'actions': [],
+                    'rewards': [],
+                    'terminals': [],
+                    'next_observations': []
+                }
+                step_count = 0
+                
+
+    print(f"Extracted {len(trajectories)} trajectories (max {max_episode_steps} steps each).")
+
+    # Compute cumulative rewards
+    cumulative_rewards = [np.sum(traj['rewards']) for traj in trajectories]
+
+    # Get indices of top K cumulative rewards
+    top_k_indices = np.argsort(cumulative_rewards)[-top_k:][::-1]  # descending order
+    # top_k_indices = np.argsort(cumulative_rewards)[::-1]  # descending order
+
+    print(f"Top {top_k} cumulative rewards: {[cumulative_rewards[i] for i in top_k_indices]}")
+
+    # Collect all top K trajectories and stack them
+    all_obs = []
+    all_actions = []
+    all_rewards = []
+    all_next_obs = []
+    total_length = 0
+
+    for idx in top_k_indices:
+        traj = trajectories[idx]
+        all_obs.append(traj['observations'])
+        all_actions.append(traj['actions'])
+        all_rewards.append(traj['rewards'])
+        all_next_obs.append(traj['next_observations'])
+        total_length += len(traj['observations'])
+
+    # print(f"Top {top_k} cumulative rewards: {[cumulative_rewards[i] for i in top_k_indices]}")
+
+    # Stack everything
+    stacked_obs = np.vstack(all_obs)
+    stacked_actions = np.vstack(all_actions)
+    stacked_rewards = np.hstack(all_rewards)  # rewards are usually 1D
+    stacked_next_obs = np.vstack(all_next_obs)
+
+    # Final dictionary
+    best_dataset = {
+        'arr_0': total_length,  # Total length of stacked trajectories
+        'observations': stacked_obs,
+        'actions': stacked_actions,
+        'rewards': stacked_rewards.reshape(-1, 1),  # Shape [N, 1]
+        'next_observations': stacked_next_obs,
+    }
+
+    # plt.scatter(stacked_obs[:1000, 0], stacked_obs[:1000, 1])
+    # plt.show()
 
     return best_dataset

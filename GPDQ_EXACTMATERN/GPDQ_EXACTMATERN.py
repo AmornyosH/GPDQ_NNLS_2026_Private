@@ -26,7 +26,7 @@ class GaussianProcessDiffusionQlearning:
         self.STATE_DIM = int(params_dict['state_dim'])
         self.ACTION_DIM = int(params_dict['action_dim'])
         self.cuda = CUDA
-        self.num_action_candidates = 64
+        self.num_action_candidates = 16
         self.NUM_SAMPLE = dataset['observations'].shape[0]
         # Initialise replay buffers
         self.state_buffer = torch.tensor(dataset['observations'], dtype=torch.float32)        # State buffer (unnormalised)
@@ -112,7 +112,8 @@ class GaussianProcessDiffusionQlearning:
     # Training Record Loading Method
     def loadTrainingRecord(self, path:str=None):
         if path is None:
-            _loaded_training_record = torch.load(self.training_record_path, map_location=torch.device('cpu' if not CUDA else 'cuda'))
+            _loaded_training_record = torch.load(self.training_record_path, 
+                                                 map_location=torch.device('cpu' if not CUDA else 'cuda'))
         else:
             _loaded_training_record = torch.load(path, map_location=torch.device('cpu' if not CUDA else 'cuda'))
         self.training_record = _loaded_training_record['training_record']
@@ -356,11 +357,18 @@ class GaussianProcessDiffusionQlearning:
                 # For q-network and diffusion, still using the original observation (x) not the latent.
                 _sampling_size = self.num_action_candidates
                 _state_n_tensor = torch.reshape(states[m], [-1, self.STATE_DIM]).repeat(_sampling_size, 1)
-                a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=False)
-                # a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=True)
+                _beh_a_n_tensor = torch.reshape(self.gp_model.y_train_org[m], [-1, self.ACTION_DIM]).repeat(_sampling_size, 1)
+                # a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=False)
+                a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=True)
 
                 # Get desired location (a, which max q)
                 _q_values = self.q_1(torch.concat([_state_n_tensor, a_i_m_1], dim=1)) 
+
+                # Get norm 
+                _norm_a = 3 * torch.sum(torch.square(_beh_a_n_tensor - a_i_m_1), dim=1).reshape(_sampling_size, 1)
+
+                # Get final Q-values
+                _q_values -= _norm_a
 
                 _max_q_value = torch.max(_q_values)
                 _max_q_indices = torch.where(_q_values == _max_q_value)[0]
@@ -558,8 +566,9 @@ class GaussianProcessDiffusionQlearning:
             _gp_loss = self.gp_model.myTraining(total_epoch=10 if self.gp_model_type == 'sparse' else 10, ft=False)
 
             # Update Altered observation for every ... epoch.
-            if self.training_record % 5 == 0:
+            if self.training_record % 10 == 0:
                 self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
+                print('Altered Observation!')
 
             # Append loss for recording.
             self.epsilon_beh_loss_append.append(diffu_loss_accum/_num_gradient_step)

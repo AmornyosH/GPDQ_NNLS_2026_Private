@@ -23,8 +23,8 @@ class myExactGP(torch.nn.Module):
         # self.gp_training_size = self.num_sample
         if self.gp_training_size > self.num_sample:
             self.gp_training_size = self.num_sample
-        self.x_dim = int(self.param_dict['state_dim'])
-        # self.x_dim =  2
+        # self.x_dim = int(self.param_dict['state_dim'])
+        self.x_dim =  2
         self.y_dim = int(self.param_dict['action_dim'])
         self.x_train_full = torch.tensor(_best_dataset['observations'], dtype=torch.float32)
         self.y_train_full = torch.tensor(_best_dataset['actions'], dtype=torch.float32)
@@ -40,7 +40,7 @@ class myExactGP(torch.nn.Module):
         self.sigma_n = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=True)
         self.ell = torch.nn.Parameter(torch.ones(size=[1, self.x_dim], dtype=torch.float32), requires_grad=True)
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-02)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-03)
 
         _start = 0
         # Select the first trajectory to be the main training matrices. 

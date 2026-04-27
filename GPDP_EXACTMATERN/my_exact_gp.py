@@ -40,7 +40,7 @@ class myExactGP(torch.nn.Module):
         self.sigma_n = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=True)
         self.ell = torch.nn.Parameter(torch.ones(size=[1, self.x_dim], dtype=torch.float32), requires_grad=True)
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-02)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-03)
 
         _start = 0
         # Select the first trajectory to be the main training matrices. 

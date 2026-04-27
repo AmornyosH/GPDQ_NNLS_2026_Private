@@ -35,6 +35,11 @@ class GaussianProcessDiffusionQlearning:
         self.reward_buffer = torch.tensor(dataset['rewards'], dtype=torch.float32).view(-1, 1)  
         self.MINIBATCH_SIZE = 256
 
+        self.action_mean = torch.mean(self.action_buffer)
+        self.action_std = torch.std(self.action_buffer) + 1e-03
+        self.action_dist = torch.distributions.Normal(loc=self.action_mean, scale=self.action_std)
+
+
         # Initialise Diffusion Model's Parameters
         self.initialiseDiffusionParams(schedule='vp', 
                                        beta_min=1, beta_max=10, 
@@ -51,7 +56,7 @@ class GaussianProcessDiffusionQlearning:
         self.Q_INPUT_DIM = self.STATE_DIM + self.ACTION_DIM
         self.V_INPUT_DIM = self.STATE_DIM
         self.epsilon_beh = my_NN.MLP(input_dim=self.EPSILON_INPUT_DIM, output_dim=self.ACTION_DIM)
-        self.q_1 = my_NN.MLP(input_dim=self.Q_INPUT_DIM, output_dim=1)
+        self.q_1 = my_NN.MLP_Qnetwork(input_dim=self.Q_INPUT_DIM, output_dim=1)
         self.q_1_tar = self.q_1
         self.epsilon_beh_tar = self.epsilon_beh
 
@@ -311,6 +316,61 @@ class GaussianProcessDiffusionQlearning:
             _mu_r, _var_r = self.predictGP(x_test=inputs)
             self.mu_r = _mu_r
             self.mu_r = torch.clip(input=_mu_r, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
+            self.var_r = torch.diag(_var_r).unsqueeze(1).expand(-1, self.ACTION_DIM)
+            # print(self.var_r)
+        
+        # Start reverse processes
+        for i in range(_diffu_steps): 
+            # Define reverse position indices 
+            # (Have to be inversed since the diffusion schedule was created in forward process's order.)
+            rev_pos = _diffu_steps-i-1
+            rev_pos_emb = self.POS_EMB[rev_pos].repeat(size, 1)
+            # Predict the noise for the reverse process (e_{theta})
+            if not target:
+                epsilon_theta_t = self.epsilon_beh(torch.concat((inputs, x_T, rev_pos_emb), dim=1))
+            else:
+                epsilon_theta_t = self.epsilon_beh_tar(torch.concat((inputs, x_T, rev_pos_emb), dim=1))
+            # Reverse process (Stochastic) (DDPM)
+            x_t_m_1  = (x_T / torch.sqrt(self.alpha[rev_pos])) - \
+                    (self.beta[rev_pos] * epsilon_theta_t / torch.sqrt(self.alpha[rev_pos]*(1-self.alpha_bar[rev_pos])))
+            # Guided term
+            if guide:
+                if i != (self.DIFFU_STEPS-1):
+                    # _cov_dp = self.beta[rev_pos] * torch.eye(size) 
+                    # _cov_gp = _cov_dp
+                    _cov_dp = self.beta[rev_pos]
+                else:
+                    # _cov_dp = 0. * torch.eye(size)
+                    _cov_dp = 0.
+                # _cov_gp = torch.clip(self.var_r, min=self.beta[rev_pos]) * torch.eye(size, dtype=torch.float32)
+                # _inv_cov_gp = torch.linalg.inv(_cov_gp)
+                _cov_gp = torch.clip(self.var_r, min=self.beta[rev_pos])
+                # x_t_m_1 += -torch.matmul(torch.matmul(_cov_dp, _inv_cov_gp), x_t_m_1 - self.mu_r)
+                # print(_cov_dp.shape, _cov_gp.shape, x_t_m_1.shape, self.mu_r.shape)
+                x_t_m_1 += -((_cov_dp / _cov_gp) * (x_t_m_1 - self.mu_r))
+                x_t_m_1 = torch.clip(x_t_m_1, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
+
+            if i == (_diffu_steps-1):
+                x_t_m_1 += (torch.sqrt(self.beta[rev_pos]) * 0) 
+            else:
+                x_t_m_1 += (torch.sqrt(self.beta[rev_pos]) * torch.normal(size=[size, self.ACTION_DIM], mean=self.DIFFU_MEAN, std=self.DIFFU_STD))
+            
+            x_T = x_t_m_1  # Update the previous a (a_i) for the next iteration.
+
+        return torch.clip(x_t_m_1, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
+
+    # Original Reverse Process Method
+    def reverseProcess_old(self, inputs:list, size:int, guide:bool=False, target:bool=False):
+        # Initialise noisy data (needed to be clipped).
+        x_T = torch.normal(size=[size, self.ACTION_DIM], mean=self.DIFFU_MEAN, std=self.DIFFU_STD)
+        _diffu_steps = self.DIFFU_STEPS 
+        _mu_r = []
+        _var_r = []
+        # Predict guidance params
+        if guide:
+            _mu_r, _var_r = self.predictGP(x_test=inputs)
+            self.mu_r = _mu_r
+            self.mu_r = torch.clip(input=_mu_r, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
             self.var_r = _var_r
             # print(self.var_r)
 
@@ -367,11 +427,18 @@ class GaussianProcessDiffusionQlearning:
                 # For q-network and diffusion, still using the original observation (x) not the latent.
                 _sampling_size = self.num_action_candidates
                 _state_n_tensor = torch.reshape(states[m], [-1, self.STATE_DIM]).repeat(_sampling_size, 1)
-                a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=False)
-                # a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=True)
+                _beh_a_n_tensor = torch.reshape(self.gp_model.y_train_org[m], [-1, self.ACTION_DIM]).repeat(_sampling_size, 1)
+                # a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=False)
+                a_i_m_1 = self.predict(state=_state_n_tensor, size=_sampling_size, guide=True)
 
                 # Get desired location (a, which max q)
                 _q_values = self.q_1(torch.concat([_state_n_tensor, a_i_m_1], dim=1)) 
+
+                # Get norm 
+                _norm_a = 3 * torch.sum(torch.square(_beh_a_n_tensor - a_i_m_1), dim=1).reshape(_sampling_size, 1)
+
+                # Get final Q-values
+                _q_values -= _norm_a
 
                 _max_q_value = torch.max(_q_values)
                 _max_q_indices = torch.where(_q_values == _max_q_value)[0]
@@ -384,18 +451,18 @@ class GaussianProcessDiffusionQlearning:
         return torch.stack(_y_hat_list, dim=0).view(-1, self.ACTION_DIM)
 
     # Altered observation computation Method (Currently used)
-    def getAlteredObservation_new(self, states):
+    def getAlteredObservation_new(self, states, actions=None):
         with torch.no_grad():
             _sampling_size = self.num_action_candidates
             batch_size = len(states)
             
             # Vectorize: reshape and repeat all states at once [batch*sampling, state_dim]
             states_tensor = states.view(batch_size, 1, self.STATE_DIM) \
-                                .expand(batch_size, _sampling_size, self.STATE_DIM) \
-                                .reshape(batch_size * _sampling_size, self.STATE_DIM)
+                                    .expand(batch_size, _sampling_size, self.STATE_DIM) \
+                                    .reshape(batch_size * _sampling_size, self.STATE_DIM)
 
             # Single batched predict call instead of per-sample loop
-            a_all = self.predict(state=states_tensor, size=batch_size * _sampling_size, guide=False)
+            a_all = self.predict(state=states_tensor, size=batch_size * _sampling_size, guide=True)
 
             # Reshape to [batch, sampling, action_dim] for per-sample argmax
             a_all = a_all.view(batch_size, _sampling_size, self.ACTION_DIM)
@@ -404,14 +471,27 @@ class GaussianProcessDiffusionQlearning:
             # Compute Q-values in one batched call [batch, sampling, 1]
             q_inputs = torch.cat([states_rep, a_all], dim=2) \
                             .view(batch_size * _sampling_size, self.STATE_DIM + self.ACTION_DIM)
-            q_values = self.q_1(q_inputs).view(batch_size, _sampling_size)
+            q_values = self.q_1_tar(q_inputs).view(batch_size, _sampling_size)
+
+            # action_tensor = actions.view(batch_size, 1, self.ACTION_DIM) \
+            #                        .expand(batch_size, _sampling_size, self.ACTION_DIM) \
+            #                        .reshape(batch_size * _sampling_size, self.ACTION_DIM)
+            # actions_rep = action_tensor.view(batch_size, _sampling_size, self.ACTION_DIM)
+            # # Norm a
+            # _norm_a = 3 * torch.sum(torch.square(actions_rep - a_all), dim=2).view(batch_size, _sampling_size)
+            # # Finalise Q-values
+            # q_values -= _norm_a
+
+            # Mean Q
+            _mean_q = torch.mean(q_values, dim=1, keepdim=True)
+            _std_q = torch.std(q_values, dim=1 , keepdim=True) + 1e-03
 
             # Argmax per sample, gather best actions
             best_indices = q_values.argmax(dim=1)  # [batch]
             best_indices_exp = best_indices.view(batch_size, 1, 1).expand(batch_size, 1, self.ACTION_DIM)
             y_hat = a_all.gather(1, best_indices_exp).squeeze(1)  # [batch, action_dim]
 
-        return y_hat
+        return y_hat, _mean_q, _std_q
 
     # Training Method (for offliine training)
     def behTraining(self, total_epoch:int, eval:bool=False, ft:bool=False):
@@ -553,7 +633,7 @@ class GaussianProcessDiffusionQlearning:
             _sampling_indices = torch.randperm(buffer_size)
 
             # Check for actor update
-            _actor_update_flag = True if (self.training_record % 2) == 0 else False
+            _actor_update_flag = True if (self.training_record % 1) == 0 else False
 
             # Start gradient steps loop
             for g in range(_num_gradient_step):
@@ -565,9 +645,15 @@ class GaussianProcessDiffusionQlearning:
 
                 # --------------------------------- Temporal Difference Learning (Q-function) ---------------------------------
                 # Prepare data for q learning
-                _batch_next_action = self.predict(state=batch_next_state_tensor, size=_batch_size, guide=True, target=False).view(-1, self.ACTION_DIM)
-                # _batch_next_action = self.getAlteredObservation(batch_next_state_tensor)
-                y_true_1 = _getExpectedCumulativeReturn(inputs=torch.concat([batch_next_state_tensor, _batch_next_action], dim=1))
+                # _batch_next_action = self.predict(state=batch_next_state_tensor, size=_batch_size, guide=True, target=False).view(-1, self.ACTION_DIM)
+                _batch_next_action = self.getAlteredObservation(batch_next_state_tensor)
+
+                # _next_action_dist = torch.distributions.Normal(loc=self.mu_r, scale=torch.sqrt(self.var_r))
+                # _next_action_log_prob = _next_action_dist.log_prob(_batch_next_action)
+                # _beh_log_prob = self.action_dist.log_prob(_batch_next_action)
+                # y_true_1 = batch_reward_tensor + _GAMMA * (torch.exp(_next_action_log_prob - _beh_log_prob) * self.q_1_tar(torch.concat([batch_next_state_tensor, _batch_next_action], dim=1)))
+
+                # y_true_1 = _getExpectedCumulativeReturn(inputs=torch.concat([batch_next_state_tensor, _batch_next_action], dim=1))
                 q_1_loss = _trainQ1Network(inputs=torch.concat([batch_state_tensor, batch_action_tensor], dim=1), y_true=y_true_1) # State-Action network (Q)
                 q_1_loss_accum += q_1_loss.tolist()
                 self.q_1_optimizer.zero_grad()
@@ -600,8 +686,9 @@ class GaussianProcessDiffusionQlearning:
                     # 2
                     _a_pred = self.gp_model.mean(batch_state_tensor)
                     _q_pred = self.q_1(torch.concat([batch_state_tensor, _a_pred], dim=1))
-                    _q_norm = _q_pred / (self.q_1(torch.concat([batch_state_tensor, batch_action_tensor], dim=1)))
-                    _gp_mean_loss = -_q_norm.mean() - torch.square(batch_action_tensor - _a_pred).mean()
+                    # _q_norm = _q_pred / (self.q_1(torch.concat([batch_state_tensor, batch_action_tensor], dim=1)))
+                    _q_norm = _q_pred
+                    _gp_mean_loss = -_q_norm.mean() + 3 * torch.square(batch_action_tensor - _a_pred).mean()
                     
                     _gp_mean_loss.backward(retain_graph=True)
                     gp_mean_loss_accum += _gp_mean_loss.tolist()
@@ -621,11 +708,11 @@ class GaussianProcessDiffusionQlearning:
             self.training_record += 1
 
             # Train the gp
-            if (self.training_record % 1) == 0:
+            if (self.training_record % 2) == 0:
                 _gp_loss = self.gp_model.myTraining(total_epoch=10 if self.gp_model_type == 'sparse' else 10, ft=False)
 
             # Update Altered observation for every ... epoch.
-            if self.training_record % 5 == 0:
+            if self.training_record % 10 == 0:
                 self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
                 # self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train_org)
                 # _gp_loss = self.gp_model.myTraining(total_epoch=100, ft=False)

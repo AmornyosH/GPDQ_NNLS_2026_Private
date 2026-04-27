@@ -16,8 +16,30 @@ class MLP(torch.nn.Module):
         act3 = torch.nn.functional.mish(self.fc3(act2))
         output = self.output(act3)
         if self.tanh_output_flag:
-            output = torch.nn.functional.tanh(output)
-            # output = torch.clip(output, -1, 1)
+            # output = torch.nn.functional.tanh(output)
+            output = torch.clip(output, -1, 1)
+        return output
+    
+class MLP_Relu(torch.nn.Module):
+    def __init__(self, input_dim, output_dim, tanh_output:bool=False):
+        super(MLP_Relu, self).__init__()
+        num_nodes = 256
+        self.fc1 = torch.nn.Linear(input_dim, num_nodes)
+        self.fc2 = torch.nn.Linear(num_nodes, num_nodes)
+        self.fc3 = torch.nn.Linear(num_nodes, num_nodes)
+        self.fc4 = torch.nn.Linear(num_nodes, num_nodes)
+        self.output = torch.nn.Linear(num_nodes, output_dim)
+        self.tanh_output_flag = tanh_output
+
+    def forward(self, input):
+        act1 = torch.nn.functional.relu(self.fc1(input))
+        act2 = torch.nn.functional.relu(self.fc2(act1))
+        act3 = torch.nn.functional.relu(self.fc3(act2))
+        act4 = torch.nn.functional.relu(self.fc4(act3))
+        output = self.output(act4)
+        if self.tanh_output_flag:
+            # output = torch.nn.functional.tanh(output)
+            output = torch.clip(output, -1, 1)
         return output
 
 class MLP_Qnetwork(torch.nn.Module):

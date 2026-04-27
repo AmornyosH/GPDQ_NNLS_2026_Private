@@ -1,6 +1,7 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
-def datasetPreprocessing(dataset, obs_tuned:bool=False, reward_tuned:bool=False):
+def datasetPreprocessingMuJoCo(dataset, obs_tuned:bool=False, reward_tuned:bool=False):
     """
     Preprocess D4RL MuJoCo dataset for offline RL algorithms (IQL-style normalization).
 
@@ -79,26 +80,34 @@ def datasetPreprocessing(dataset, obs_tuned:bool=False, reward_tuned:bool=False)
     
     obs = dataset['observations'].copy()
     actions = dataset['actions'].copy()
-    # rewards = dataset['rewards'].copy()
+    rewards = dataset['rewards'].copy()
     terminals = dataset['terminals'].copy()
-    
+    next_obs = dataset['next_observations'].copy()
+
     if obs_tuned:
         mean_obs = np.mean(obs, axis=0)
         std_obs = np.std(obs, axis=0) + 1e-3
         normalized_obs = (obs - mean_obs) / std_obs
+        obs = normalized_obs
+
+        # Compute next observations
+        next_obs = np.roll(normalized_obs, -1, axis=0)
+        # # Handle episode boundaries: next_obs after terminal is meaningless, optional to zero out
+        # next_obs[terminals==1] = 0.0
+    else:
+        mean_obs = None
+        std_obs = None
 
     if reward_tuned:
-        normalized_rewards = normaliseRewardsIQL(dataset=dataset)
+        rewards = normaliseRewardsIQL(dataset=dataset)
 
-        # 5. Compute next observations
-        next_obs = np.roll(normalized_obs, -1, axis=0)
-        # Handle episode boundaries: next_obs after terminal is meaningless, optional to zero out
-        next_obs[terminals==1] = 0.0
+    # Handle episode boundaries: next_obs after terminal is meaningless, optional to zero out
+    next_obs[terminals==1] = 0.0
 
     preprocessed_dataset = {
-        'observations': normalized_obs,
+        'observations': obs,
         'actions': actions,
-        'rewards': normalized_rewards,
+        'rewards': rewards,
         'terminals': terminals,
         'next_observations': next_obs,
     }
@@ -107,6 +116,65 @@ def datasetPreprocessing(dataset, obs_tuned:bool=False, reward_tuned:bool=False)
     print(f"  Observations mean/std: {np.mean(preprocessed_dataset['observations'], axis=0)[:5]} / {np.std(preprocessed_dataset['observations'], axis=0)[:5]}")
     print(f"  Rewards mean/std: {np.mean(preprocessed_dataset['rewards']):.3f} / {np.std(preprocessed_dataset['rewards']):.3f}")
     print(f"  Actions min/max: {preprocessed_dataset['actions'].min(axis=0)} / {preprocessed_dataset['actions'].max(axis=0)}")
+
+    return preprocessed_dataset, mean_obs, std_obs
+
+def datasetPreprocessingMaze(dataset, obs_tuned:bool=False, reward_tuned:bool=False):
+    """
+    Preprocess D4RL MuJoCo dataset for offline RL algorithms (IQL-style normalization).
+
+    Args:
+        reward_scale (float): Factor to scale rewards (default 1.0, set to 1/1000 for IQL style).
+        clip_actions (bool): Whether to clip actions to environment bounds.
+
+    Returns:
+        dict: Preprocessed dataset with keys:
+              'observations', 'actions', 'rewards', 'terminals', 'next_observations'
+    """
+
+    obs = dataset['observations'].copy()
+    actions = dataset['actions'].copy()
+    rewards = dataset['rewards'].copy()
+    terminals = dataset['terminals'].copy()
+    next_obs = dataset['next_observations'].copy()
+
+    if obs_tuned:
+        mean_obs = np.mean(obs, axis=0)
+        std_obs = np.std(obs, axis=0) + 1e-3
+        normalized_obs = (obs - mean_obs) / std_obs
+        obs = normalized_obs
+
+        # Compute next observations
+        next_obs = np.roll(normalized_obs, -1, axis=0)
+        # # Handle episode boundaries: next_obs after terminal is meaningless, optional to zero out
+        # next_obs[terminals==1] = 0.0
+    else:
+        mean_obs = None
+        std_obs = None
+
+    if reward_tuned:
+        rewards -= 1
+
+    terminals[rewards>0] = True
+    # print(obs[np.where(terminals==True), :2])
+    # # Handle episode boundaries: next_obs after terminal is meaningless, optional to zero out
+    # next_obs[terminals==1] = 0.0
+
+    preprocessed_dataset = {
+        'observations': obs,
+        'actions': actions,
+        'rewards': rewards,
+        'terminals': terminals,
+        'next_observations': next_obs,
+    }
+
+    print(f"Dataset preprocessed Maze:")
+    print(f"  Observations mean/std: {np.mean(preprocessed_dataset['observations'], axis=0)[:5]} / {np.std(preprocessed_dataset['observations'], axis=0)[:5]}")
+    print(f"  Rewards mean/std: {np.mean(preprocessed_dataset['rewards']):.3f} / {np.std(preprocessed_dataset['rewards']):.3f}")
+    print(f"  Actions min/max: {preprocessed_dataset['actions'].min(axis=0)} / {preprocessed_dataset['actions'].max(axis=0)}")
+
+    # plt.scatter(obs[:1000, 0], obs[:1000, 1])
+    # plt.show()
 
     return preprocessed_dataset, mean_obs, std_obs
 
