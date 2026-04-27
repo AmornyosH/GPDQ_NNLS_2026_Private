@@ -23,7 +23,6 @@ def rangeConversion(input, new_min, new_max, old_min=-1, old_max=1) -> float:
                             min=new_min, 
                             max=new_max)
 
-
 def klDivergence(input_1, input_2):
     '''
     KL-Divergence Computation Method \\
@@ -252,6 +251,93 @@ def bestTrajExtraction(dataset: dict, max_episode_steps=1000, top_k=10):
         'actions': stacked_actions,
         'rewards': stacked_rewards.reshape(-1, 1),  # Shape [N, 1]
         'terminals': stacked_terminals,
+        'next_observations': stacked_next_obs,
+    }
+
+    return best_dataset
+
+# Best Trajectory Extraction Method (>1)
+def multiBestTrajExtraction(dataset: dict, max_episode_steps=1000, top_k=10):
+    observations = dataset['observations']
+    actions = dataset['actions']
+    rewards = dataset['rewards']
+    terminals = dataset['terminals']
+    next_observations = dataset['next_observations']
+    num_samples = len(observations)
+
+    trajectories = []
+    current_trajectory = {
+        'observations': [],
+        'actions': [],
+        'rewards': [],
+        'next_observations': []
+    }
+    step_count = 0  # Track steps in episode (max 1000)
+
+    for i in range(num_samples):
+        current_trajectory['observations'].append(observations[i])
+        current_trajectory['actions'].append(actions[i])
+        current_trajectory['rewards'].append(rewards[i])
+        current_trajectory['next_observations'].append(next_observations[i])
+        step_count += 1
+
+        # End of trajectory
+        if terminals[i] or step_count >= max_episode_steps or i == num_samples - 1:
+            if step_count == 1:
+                ... 
+            else:
+                trajectories.append({
+                    'observations': np.array(current_trajectory['observations']),
+                    'actions': np.array(current_trajectory['actions']),
+                    'rewards': np.array(current_trajectory['rewards']),
+                    'next_observations': np.array(current_trajectory['next_observations'])
+                })
+            # Reset
+            current_trajectory = {
+                'observations': [],
+                'actions': [],
+                'rewards': [],
+                'next_observations': []
+            }
+            step_count = 0
+
+    print(f"Extracted {len(trajectories)} trajectories (max 1000 steps each).")
+
+    # Compute cumulative rewards
+    cumulative_rewards = [np.sum(traj['rewards']) for traj in trajectories]
+
+    # Get indices of top K cumulative rewards
+    top_k_indices = np.argsort(cumulative_rewards)[-top_k:][::-1]  # descending order
+
+    print(f"Top {top_k} cumulative rewards: {[cumulative_rewards[i] for i in top_k_indices]}")
+
+    # Collect all top K trajectories and stack them
+    all_obs = []
+    all_actions = []
+    all_rewards = []
+    all_next_obs = []
+    total_length = 0
+
+    for idx in top_k_indices:
+        traj = trajectories[idx]
+        all_obs.append(traj['observations'])
+        all_actions.append(traj['actions'])
+        all_rewards.append(traj['rewards'])
+        all_next_obs.append(traj['next_observations'])
+        total_length += len(traj['observations'])
+
+    # Stack everything
+    stacked_obs = np.vstack(all_obs)
+    stacked_actions = np.vstack(all_actions)
+    stacked_rewards = np.hstack(all_rewards)  # rewards are usually 1D
+    stacked_next_obs = np.vstack(all_next_obs)
+
+    # Final dictionary
+    best_dataset = {
+        'arr_0': total_length,  # Total length of stacked trajectories
+        'observations': stacked_obs,
+        'actions': stacked_actions,
+        'rewards': stacked_rewards.reshape(-1, 1),  # Shape [N, 1]
         'next_observations': stacked_next_obs,
     }
 
