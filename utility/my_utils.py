@@ -355,11 +355,11 @@ def mazeTrajExtraction(dataset:dict, max_episode_steps=1000, top_k=10):
     # Find the initial state first
     num_samples = len(observations)
 
-    _init = np.array([0., 0.], dtype=float)
+    _init = np.array([-1., -1.], dtype=float)
     # _target = np.array([0.36824249435748196, 9.156394661806964], dtype=float)
     # _target = np.array([1, 0.5], dtype=float)
     # _target = np.array([5.5, 6.0], dtype=float)
-    _target = np.array([20.36824249435748, 21.156394661806964], dtype=float)
+    _target = np.array([(20.36824249435748  / 22)*2 - 1, (21.156394661806964 / 22)*2 - 1], dtype=float)
     _threshold = 1.0
 
     trajectories = []

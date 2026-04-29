@@ -18,6 +18,7 @@ from utility import my_utils, my_NN
 from time import time
 import numpy as np
 import os
+from sys import platform
 
 class HiearchicalGaussianprocessDiffusionQlearning:
     def __init__(self, params_dict:dict, dataset:dict, ft:bool=False):
@@ -26,16 +27,18 @@ class HiearchicalGaussianprocessDiffusionQlearning:
         self.STATE_DIM = int(params_dict['state_dim'])
         self.ACTION_DIM = int(params_dict['action_dim'])
         self.GOAL_DIM = int(params_dict['goal_dim'])
-        self.high_state_dim = int(2 + self.GOAL_DIM)  # High-level state dimension
+        self.high_state_dim = int(self.GOAL_DIM)  # High-level state dimension
         self.cuda = CUDA
         self.num_action_candidates = 10
         self.NUM_SAMPLE = dataset['observations'].shape[0]
         
-        if 'medium-play' in self.ENV_CONFIG:
-            self.final_goal = torch.tensor([20.36824249435748, 21.156394661806964], dtype=torch.float32)
-        else:
-            # umaze
-            self.final_goal = torch.tensor([0.36824249435748196, 9.156394661806964], dtype=torch.float32)
+        # if 'medium-play' in self.ENV_CONFIG:
+        #     self.final_goal = torch.tensor([20.36824249435748, 21.156394661806964], dtype=torch.float32)
+        # else:
+        #     # umaze
+        #     self.final_goal = torch.tensor([0.36824249435748196, 9.156394661806964], dtype=torch.float32)
+        
+        self.final_goal = torch.tensor([20.36824249435748, 21.156394661806964], dtype=torch.float32)
         
         # Initialise replay buffers
         self.state_buffer = torch.tensor(dataset['observations'], dtype=torch.float32)        # State buffer (unnormalised)
@@ -50,9 +53,14 @@ class HiearchicalGaussianprocessDiffusionQlearning:
         self.initialiseDiffusionParams(schedule='vp', beta_min=1, beta_max=10, num_step=params_dict['diffusion_step'], dec_step=params_dict['diffusion_step'])
 
         # Initialise Paths
-        self.training_record_path = '/home/amornyos/PhD/Packages/resources/training_records/{}/{}/{}_{}_training_records'.format(self.ALG, self.ENV_CONFIG, self.ALG, self.ENV_CONFIG)
-        self.testing_record_path = '/home/amornyos/PhD/Packages/resources/test_results/{}/{}_{}_test_results'.format(self.ALG, self.ENV_CONFIG, self.ALG, self.ENV_CONFIG)
+        if platform == 'linux':
+            self.training_record_path = '/home/amornyos/PhD/Packages/resources/training_records/{}/{}/{}_{}_training_records'.format(self.ALG, self.ENV_CONFIG, self.ALG, self.ENV_CONFIG)
+            self.testing_record_path = '/home/amornyos/PhD/Packages/resources/test_results/{}/{}_{}_test_results'.format(self.ALG, self.ENV_CONFIG, self.ALG, self.ENV_CONFIG)
+        elif platform == 'win32':
+            self.training_record_path = 'C:/Amornyos/PhD/resources/training_records/{}/{}/{}_{}_training_records'.format(self.ALG, self.ENV_CONFIG, self.ALG, self.ENV_CONFIG)
+            self.testing_record_path = 'C:/Amornyos/PhD/resources/test_results/{}/{}_{}_test_results'.format(self.ALG, self.ENV_CONFIG, self.ALG, self.ENV_CONFIG)
         
+    
         # Initialise neural networks
         self.EPSILON_INPUT_DIM = self.high_state_dim + self.GOAL_DIM + self.POS_DIM
         self.EPSILON_BEH_INPUT_DIM = self.GOAL_DIM + self.POS_DIM
@@ -60,7 +68,8 @@ class HiearchicalGaussianprocessDiffusionQlearning:
         self.LOW_POLICY_INPUT_DIM = self.STATE_DIM + self.GOAL_DIM
         self.LOW_Q_INPUT_DIM = self.STATE_DIM + self.ACTION_DIM
         # High-level policy
-        self.epsilon_beh = my_NN.MLP(input_dim=self.EPSILON_INPUT_DIM, output_dim=self.GOAL_DIM)
+        # self.epsilon_beh = my_NN.MLP(input_dim=self.EPSILON_INPUT_DIM, output_dim=self.GOAL_DIM)
+        self.epsilon_beh = my_NN.MLP(input_dim=self.EPSILON_BEH_INPUT_DIM, output_dim=self.GOAL_DIM)
         # Low-level policy
         self.low_policy = my_NN.MLP_Relu(input_dim=self.LOW_POLICY_INPUT_DIM, output_dim=self.ACTION_DIM, tanh_output=True)
         # Value networks
@@ -282,7 +291,8 @@ class HiearchicalGaussianprocessDiffusionQlearning:
             rev_pos_emb = self.POS_EMB[rev_pos].repeat(size, 1)
             # Predict the noise for the reverse process (e_{theta})
             if not target:
-                epsilon_theta_t = self.epsilon_beh(torch.concat((inputs, x_T, rev_pos_emb), dim=1))
+                # epsilon_theta_t = self.epsilon_beh(torch.concat((inputs, x_T, rev_pos_emb), dim=1))
+                epsilon_theta_t = self.epsilon_beh(torch.concat((x_T, rev_pos_emb), dim=1))
             else:
                 epsilon_theta_t = self.epsilon_beh_tar(torch.concat((inputs, x_T, rev_pos_emb), dim=1))
             # Reverse process (Stochastic) (DDPM)
@@ -451,7 +461,8 @@ class HiearchicalGaussianprocessDiffusionQlearning:
 
                 # Original
                 forward_action_tensor = self.forwardProcess(data=batch_action_tensor, epsilon=epsilon_tensor, step=rand_t)
-                diffu_loss, _ = _trainDiffusionBeh(inputs=torch.concat([batch_state_tensor, forward_action_tensor, encode_t_tensor], dim=1), y_true=epsilon_tensor)
+                # diffu_loss, _ = _trainDiffusionBeh(inputs=torch.concat([batch_state_tensor, forward_action_tensor, encode_t_tensor], dim=1), y_true=epsilon_tensor)
+                diffu_loss, _ = _trainDiffusionBeh(inputs=torch.concat([forward_action_tensor, encode_t_tensor], dim=1), y_true=epsilon_tensor)
                 diffu_loss = torch.mean(diffu_loss)
 
                 diffu_loss.backward()
