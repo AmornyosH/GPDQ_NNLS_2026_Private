@@ -1,7 +1,7 @@
 # =================================================== Modules ==================================================
-from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning 
+# from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning 
 # from GPDQ_SVGPRBF.GPDQ_SVGPRBF import GaussianProcessDiffusionQlearning
-# from GPDQ_EXACTNZMRBF.GPDQ_EXACTNZMRBF import GaussianProcessDiffusionQlearning
+from GPDQ_EXACTNZMRBF.GPDQ_EXACTNZMRBF import GaussianProcessDiffusionQlearning
 # from GPDP_EXACTRBF.GPDP_EXACTRBF import GaussianProcessDiffusionQlearning
 # from GPDQ_DOUBLEQEXACTRBF.GPDQ_DOUBLEQEXACTRBF import GaussianProcessDiffusionQlearning
 # from GPDP_EXACTMATERN.GPDP_EXACTMATERN import GaussianProcessDiffusionQlearning
@@ -12,6 +12,7 @@ from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning
 # from GPDP_DKLRBF.GPDP_DKLRBF import GaussianProcessDiffusionQlearning
 # from GPDQ_SVGPRBF.GPDQ_SVGPRBF import GaussianProcessDiffusionQlearning
 # from GPDQ_EXACTNZMMATERN.GPDQ_EXACTNZMMATERN import GaussianProcessDiffusionQlearning
+from HGDQ_EXACTRBF.HGDQ_EXACTRBF import HiearchicalGaussianprocessDiffusionQlearning
 from utility import dataset_preprocessing
 
 import os
@@ -225,8 +226,6 @@ params_dict = getParamsDict(env=ENV_NAME)
 env = gym.make(args.env)
 dataset = d4rl.qlearning_dataset(env)
 
-print(env.reset()[:2])
-
 # Dataset Preprocessing
 if 'maze2d' or 'antmaze' in args.env:
     dataset, mean_obs, std_obs = dataset_preprocessing.datasetPreprocessingMaze(dataset=dataset, 
@@ -237,9 +236,13 @@ else:
                                                         obs_tuned=params_dict[args.env]['normalise_obs'], 
                                                         reward_tuned=params_dict[args.env]['normalise_reward'])
 
+
+
 # -------------------------------------- Create the agent ------------------------------------------------------
 if args.alg == 'GPDQ':                                                                                        
-    agent = GaussianProcessDiffusionQlearning(params_dict=params_dict[args.env], dataset=dataset)   
+    agent = GaussianProcessDiffusionQlearning(params_dict=params_dict[args.env], dataset=dataset) 
+elif args.alg == 'HGDQ':                                                                                        
+    agent = HiearchicalGaussianprocessDiffusionQlearning(params_dict=params_dict[args.env], dataset=dataset) 
 # --------------------------------------------------------------------------------------------------------------
 
 
@@ -293,9 +296,9 @@ elif args.task == 'gp_training':
 elif args.task == 'testing':
     # plt.plot(agent.gp_model.x_train[:, 0].tolist(), agent.gp_model.x_train[:, 1].tolist())
     # plt.show()
-    j = 1000000
+    j = 300000
     _reward_append = []
-    while j <= 2000000:
+    while j <= 1000000:
         _increment = 10000
         agent.loadTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
         agent.loadGPTrainingRecord(path=agent.training_record_path+'_{:d}'.format(j))
@@ -303,7 +306,7 @@ elif args.task == 'testing':
         # # Altered Y_train
         # agent.gp_model.y_train = agent.getAlteredObservation(states=agent.gp_model.x_train)
 
-        _, norm_reward_append = evaluatingMuJoCo(eval_times=1)
+        _, norm_reward_append = evaluatingMuJoCo(eval_times=5)
         _reward_append.append(norm_reward_append)
         j += _increment
         np.savez(agent.testing_record_path, _reward_append, j) # save the evaluation rewards.

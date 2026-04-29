@@ -23,8 +23,8 @@ class myExactGP(torch.nn.Module):
         # self.gp_training_size = self.num_sample
         if self.gp_training_size > self.num_sample:
             self.gp_training_size = self.num_sample
-        self.x_dim = int(self.param_dict['state_dim'])
-        # self.x_dim =  2
+        # self.x_dim = int(self.param_dict['state_dim'])
+        self.x_dim =  2
         self.y_dim = int(self.param_dict['action_dim'])
         self.x_train_full = torch.tensor(_best_dataset['observations'], dtype=torch.float32)
         self.y_train_full = torch.tensor(_best_dataset['actions'], dtype=torch.float32)
@@ -47,7 +47,7 @@ class myExactGP(torch.nn.Module):
         self.y_train = torch.tensor(self.y_train_full[0+_start:_start+self.gp_training_size], dtype=torch.float32)
 
         # Mean function
-        self.mean = my_NN.MLP_Relu(input_dim=self.x_dim, output_dim=self.y_dim, tanh_output=True)
+        self.mean = my_NN.MLP_Relu(input_dim=29, output_dim=self.y_dim, tanh_output=True)
         self.mean_optimizer = torch.optim.Adam(self.mean.parameters(), lr=3e-04)
 
         # Initialised training kernels (K, K_inv).
@@ -71,8 +71,8 @@ class myExactGP(torch.nn.Module):
         x_test = X_s[:, 0:self.x_dim]
         x_test = x_test.view(-1, self.x_dim)
 
-        _mean_x_train = self.mean(self.x_train)
-        _mean_x_test = self.mean(x_test)
+        _mean_x_train = self.mean(self.x_train_org)
+        _mean_x_test = self.mean(X_s.view(-1, 29))
 
         with torch.no_grad():
             _k_s = self.rbfKernel(X_1=self.x_train, X_2=x_test, noise=False)

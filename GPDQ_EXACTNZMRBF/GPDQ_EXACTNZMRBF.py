@@ -26,7 +26,7 @@ class GaussianProcessDiffusionQlearning:
         self.STATE_DIM = int(params_dict['state_dim'])
         self.ACTION_DIM = int(params_dict['action_dim'])
         self.cuda = CUDA
-        self.num_action_candidates = 64
+        self.num_action_candidates = 32
         self.NUM_SAMPLE = dataset['observations'].shape[0]
         # Initialise replay buffers
         self.state_buffer = torch.tensor(dataset['observations'], dtype=torch.float32)        # State buffer (unnormalised)
@@ -71,7 +71,8 @@ class GaussianProcessDiffusionQlearning:
         # ======================================= Create GP model. =======================================
         # Uncomment out the selected gp model type...
         self.gp_model_type = 'exact'
-        best_dataset = self.multiBestTrajExtraction(dataset=dataset, max_episode_steps=1000, top_k=5)
+        # best_dataset = self.multiBestTrajExtraction(dataset=dataset, max_episode_steps=1000, top_k=5)
+        best_dataset = my_utils.mazeTrajExtraction(dataset=dataset, max_episode_steps=1000, top_k=100)
 
         if self.gp_model_type == 'exact':
             self.gp_model = my_exact_gp.myExactGP(params_dict=params_dict, dataset=best_dataset, cuda=CUDA, parent_alg=self.ALG)
@@ -359,56 +360,6 @@ class GaussianProcessDiffusionQlearning:
 
         return torch.clip(x_t_m_1, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
 
-    # Original Reverse Process Method
-    def reverseProcess_old(self, inputs:list, size:int, guide:bool=False, target:bool=False):
-        # Initialise noisy data (needed to be clipped).
-        x_T = torch.normal(size=[size, self.ACTION_DIM], mean=self.DIFFU_MEAN, std=self.DIFFU_STD)
-        _diffu_steps = self.DIFFU_STEPS 
-        _mu_r = []
-        _var_r = []
-        # Predict guidance params
-        if guide:
-            _mu_r, _var_r = self.predictGP(x_test=inputs)
-            self.mu_r = _mu_r
-            self.mu_r = torch.clip(input=_mu_r, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
-            self.var_r = _var_r
-            # print(self.var_r)
-
-        # Start reverse processes
-        for i in range(_diffu_steps): 
-            # Define reverse position indices 
-            # (Have to be inversed since the diffusion schedule was created in forward process's order.)
-            rev_pos = _diffu_steps-i-1
-            rev_pos_emb = self.POS_EMB[rev_pos].repeat(size, 1)
-            # Predict the noise for the reverse process (e_{theta})
-            if not target:
-                epsilon_theta_t = self.epsilon_beh(torch.concat((inputs, x_T, rev_pos_emb), dim=1))
-            else:
-                epsilon_theta_t = self.epsilon_beh_tar(torch.concat((inputs, x_T, rev_pos_emb), dim=1))
-            # Reverse process (Stochastic) (DDPM)
-            x_t_m_1  = (x_T / torch.sqrt(self.alpha[rev_pos])) - \
-                    (self.beta[rev_pos] * epsilon_theta_t / torch.sqrt(self.alpha[rev_pos]*(1-self.alpha_bar[rev_pos])))
-            # Guided term
-            if guide:
-                if i != (self.DIFFU_STEPS-1):
-                    _cov_dp = self.beta[rev_pos] * torch.eye(size) 
-                    _cov_gp = _cov_dp
-                else:
-                    _cov_dp = 0. * torch.eye(size)
-                    _cov_gp = torch.clip(self.var_r, min=self.beta[rev_pos]) * torch.eye(size, dtype=torch.float32)
-                _inv_cov_gp = torch.linalg.inv(_cov_gp)
-                x_t_m_1 += -torch.matmul(torch.matmul(_cov_dp, _inv_cov_gp), x_t_m_1 - self.mu_r)
-                x_t_m_1 = torch.clip(x_t_m_1, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
-
-            if i == (_diffu_steps-1):
-                x_t_m_1 += (torch.sqrt(self.beta[rev_pos]) * 0) 
-            else:
-                x_t_m_1 += (torch.sqrt(self.beta[rev_pos]) * torch.normal(size=[size, self.ACTION_DIM], mean=self.DIFFU_MEAN, std=self.DIFFU_STD))
-            
-            x_T = x_t_m_1  # Update the previous a (a_i) for the next iteration.
-
-        return torch.clip(x_t_m_1, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
-
     # Output prediction method
     def predict(self, state, size:int, guide:bool=True, target:bool=False):
         if not torch.is_tensor(state):
@@ -435,7 +386,7 @@ class GaussianProcessDiffusionQlearning:
                 _q_values = self.q_1(torch.concat([_state_n_tensor, a_i_m_1], dim=1)) 
 
                 # Get norm 
-                _norm_a = 3 * torch.sum(torch.square(_beh_a_n_tensor - a_i_m_1), dim=1).reshape(_sampling_size, 1)
+                _norm_a = 10 * torch.sum(torch.square(_beh_a_n_tensor - a_i_m_1), dim=1).reshape(_sampling_size, 1)
 
                 # Get final Q-values
                 _q_values -= _norm_a
@@ -599,7 +550,7 @@ class GaussianProcessDiffusionQlearning:
             self.q_1_tar.load_state_dict(q_1_tar_state_dict)
             
         # Declare Constants
-        _GAMMA = 0.99  # Discount factor.
+        _GAMMA = 0.995  # Discount factor.
         _TAU = 0.005  # Tau for soft updating of target model's weights.
 
         # Extract dataset
@@ -645,15 +596,15 @@ class GaussianProcessDiffusionQlearning:
 
                 # --------------------------------- Temporal Difference Learning (Q-function) ---------------------------------
                 # Prepare data for q learning
-                # _batch_next_action = self.predict(state=batch_next_state_tensor, size=_batch_size, guide=True, target=False).view(-1, self.ACTION_DIM)
-                _batch_next_action = self.getAlteredObservation(batch_next_state_tensor)
+                _batch_next_action = self.predict(state=batch_next_state_tensor, size=_batch_size, guide=True, target=False).view(-1, self.ACTION_DIM)
+                # _batch_next_action = self.getAlteredObservation(batch_next_state_tensor)
 
                 # _next_action_dist = torch.distributions.Normal(loc=self.mu_r, scale=torch.sqrt(self.var_r))
                 # _next_action_log_prob = _next_action_dist.log_prob(_batch_next_action)
                 # _beh_log_prob = self.action_dist.log_prob(_batch_next_action)
                 # y_true_1 = batch_reward_tensor + _GAMMA * (torch.exp(_next_action_log_prob - _beh_log_prob) * self.q_1_tar(torch.concat([batch_next_state_tensor, _batch_next_action], dim=1)))
 
-                # y_true_1 = _getExpectedCumulativeReturn(inputs=torch.concat([batch_next_state_tensor, _batch_next_action], dim=1))
+                y_true_1 = _getExpectedCumulativeReturn(inputs=torch.concat([batch_next_state_tensor, _batch_next_action], dim=1))
                 q_1_loss = _trainQ1Network(inputs=torch.concat([batch_state_tensor, batch_action_tensor], dim=1), y_true=y_true_1) # State-Action network (Q)
                 q_1_loss_accum += q_1_loss.tolist()
                 self.q_1_optimizer.zero_grad()
@@ -688,7 +639,7 @@ class GaussianProcessDiffusionQlearning:
                     _q_pred = self.q_1(torch.concat([batch_state_tensor, _a_pred], dim=1))
                     # _q_norm = _q_pred / (self.q_1(torch.concat([batch_state_tensor, batch_action_tensor], dim=1)))
                     _q_norm = _q_pred
-                    _gp_mean_loss = -_q_norm.mean() + 3 * torch.square(batch_action_tensor - _a_pred).mean()
+                    _gp_mean_loss = -_q_norm.mean() + 10*torch.square(batch_action_tensor - _a_pred).mean()
                     
                     _gp_mean_loss.backward(retain_graph=True)
                     gp_mean_loss_accum += _gp_mean_loss.tolist()
@@ -713,8 +664,8 @@ class GaussianProcessDiffusionQlearning:
 
             # Update Altered observation for every ... epoch.
             if self.training_record % 10 == 0:
-                self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
-                # self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train_org)
+                # self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
+                self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train_org)
                 # _gp_loss = self.gp_model.myTraining(total_epoch=100, ft=False)
 
             # Append loss for recording.

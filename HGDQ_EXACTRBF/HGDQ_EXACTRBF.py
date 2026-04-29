@@ -39,9 +39,9 @@ class HiearchicalGaussianprocessDiffusionQlearning:
         
         # Initialise replay buffers
         self.state_buffer = torch.tensor(dataset['observations'], dtype=torch.float32)        # State buffer (unnormalised)
-        self.high_state_buffer = torch.concat([self.state_buffer[:, :2], self.final_goal.repeat(self.NUM_SAMPLE, -1)], dim=1)  # High-level state buffer
+        self.high_state_buffer = torch.concat([self.state_buffer[:, :2], self.final_goal.repeat(self.NUM_SAMPLE, 1)], dim=1)  # High-level state buffer
         self.next_state_buffer = torch.tensor(dataset['next_observations'], dtype=torch.float32)   # Next state buffer (unnormalised)
-        self.high_next_state_buffer = torch.concat([self.next_state_buffer[:, :2], self.final_goal.repeat(self.NUM_SAMPLE, -1)], dim=1)  # High-level next state buffer
+        self.high_next_state_buffer = torch.concat([self.next_state_buffer[:, :2], self.final_goal.repeat(self.NUM_SAMPLE, 1)], dim=1)  # High-level next state buffer
         self.action_buffer = torch.tensor(dataset['actions'], dtype=torch.float32)       # Action buffer
         self.reward_buffer = torch.tensor(dataset['rewards'], dtype=torch.float32).view(-1, 1)  
         self.MINIBATCH_SIZE = 256
@@ -62,7 +62,7 @@ class HiearchicalGaussianprocessDiffusionQlearning:
         # High-level policy
         self.epsilon_beh = my_NN.MLP(input_dim=self.EPSILON_INPUT_DIM, output_dim=self.GOAL_DIM)
         # Low-level policy
-        self.low_policy = my_NN.MLP_Relu(input_dim=self.LOW_POLICY_INPUT_DIM, output_dim=self.ACTION_DIM)
+        self.low_policy = my_NN.MLP_Relu(input_dim=self.LOW_POLICY_INPUT_DIM, output_dim=self.ACTION_DIM, tanh_output=True)
         # Value networks
         self.high_q = my_NN.MLP_Qnetwork(input_dim=self.HIGH_Q_INPUT_DIM, output_dim=1)
         self.low_q = my_NN.MLP_Qnetwork(input_dim=self.LOW_Q_INPUT_DIM, output_dim=1)
@@ -262,7 +262,7 @@ class HiearchicalGaussianprocessDiffusionQlearning:
     # Original Reverse Process Method
     def reverseProcess(self, inputs:list, size:int, guide:bool=False, target:bool=False):
         # Initialise noisy data (needed to be clipped).
-        x_T = torch.normal(size=[size, self.ACTION_DIM], mean=self.DIFFU_MEAN, std=self.DIFFU_STD)
+        x_T = torch.normal(size=[size, self.GOAL_DIM], mean=self.DIFFU_MEAN, std=self.DIFFU_STD)
         _diffu_steps = self.DIFFU_STEPS 
         _mu_r = []
         _var_r = []
@@ -271,7 +271,7 @@ class HiearchicalGaussianprocessDiffusionQlearning:
             _mu_r, _var_r = self.predictGP(x_test=inputs)
             self.mu_r = _mu_r
             self.mu_r = torch.clip(input=_mu_r, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
-            self.var_r = torch.diag(_var_r).unsqueeze(1).expand(-1, self.ACTION_DIM)
+            self.var_r = torch.diag(_var_r).unsqueeze(1).expand(-1, self.GOAL_DIM)
             # print(self.var_r)
         
         # Start reverse processes
@@ -308,17 +308,28 @@ class HiearchicalGaussianprocessDiffusionQlearning:
             if i == (_diffu_steps-1):
                 x_t_m_1 += (torch.sqrt(self.beta[rev_pos]) * 0) 
             else:
-                x_t_m_1 += (torch.sqrt(self.beta[rev_pos]) * torch.normal(size=[size, self.ACTION_DIM], mean=self.DIFFU_MEAN, std=self.DIFFU_STD))
+                x_t_m_1 += (torch.sqrt(self.beta[rev_pos]) * torch.normal(size=[size, self.GOAL_DIM], mean=self.DIFFU_MEAN, std=self.DIFFU_STD))
             
             x_T = x_t_m_1  # Update the previous a (a_i) for the next iteration.
 
         return torch.clip(x_t_m_1, min=self.MIN_DIFFU_SPACE, max=self.MAX_DIFFU_SPACE)
 
     # Output prediction method
-    def predict(self, state, size:int, guide:bool=True, target:bool=False):
+    def predict2(self, state, size:int, guide:bool=True, target:bool=False):
         if not torch.is_tensor(state):
             state = torch.tensor(state, dtype=torch.float32).view(-1, self.STATE_DIM)
         return self.reverseProcess(state, size, guide, target)
+
+    # Output prediction method
+    def predict(self, state, size:int, guide:bool=True, target:bool=False):
+        if not torch.is_tensor(state):
+            state = torch.tensor(state, dtype=torch.float32).view(-1, self.STATE_DIM)
+        # get goal
+        _goal = self.reverseProcess(torch.concat([state[:, :2], self.final_goal.reshape(-1, 2)], dim=1), size, guide, target)
+        _goal *= 22.
+        # get action
+        _action = self.low_policy(torch.concat([state, _goal], dim=1))
+        return _action
 
     # Altered observation computation Method (Currently used)
     def getAlteredObservation_new(self, states, actions=None):
@@ -544,9 +555,11 @@ class HiearchicalGaussianprocessDiffusionQlearning:
                 self.epsilon_optimizer.zero_grad()
                 rand_t = torch.randint(low=0, high=self.DIFFU_STEPS, size=[_batch_size])
                 encode_t_tensor = self.POS_EMB[rand_t]  # Retrieve
-                epsilon_tensor = torch.normal(mean=self.DIFFU_MEAN, std=self.DIFFU_STD, size=[_batch_size, self.ACTION_DIM])
+                epsilon_tensor = torch.normal(mean=self.DIFFU_MEAN, std=self.DIFFU_STD, size=[_batch_size, self.GOAL_DIM])
                 # Original
-                forward_goal_tensor = self.forwardProcess(data=batch_high_next_state_tensor, epsilon=epsilon_tensor, step=rand_t)
+                # Convert goal to diffusion space
+                _train_goal = batch_high_next_state_tensor[:, :2] / 22
+                forward_goal_tensor = self.forwardProcess(data=_train_goal, epsilon=epsilon_tensor, step=rand_t)
                 diffu_loss, _ = _trainDiffusionBeh(inputs=torch.concat([batch_high_state_tensor, forward_goal_tensor, encode_t_tensor], dim=1), y_true=epsilon_tensor)
                 diffu_loss = torch.mean(diffu_loss)
                 diffu_loss.backward(retain_graph=True)
@@ -556,7 +569,9 @@ class HiearchicalGaussianprocessDiffusionQlearning:
                 # --------------------------------- Temporal Difference Learning (Q-function) ---------------------------------
                 # Prepare data for q learning
                 self.high_q_optimizer.zero_grad()
-                _batch_next_goal = self.predict(state=batch_high_next_state_tensor, size=_batch_size, guide=True, target=False).view(-1, self.GOAL_DIM)
+                _batch_next_goal = self.predict2(state=batch_high_next_state_tensor, size=_batch_size, guide=True, target=False).view(-1, self.GOAL_DIM)
+                # Convert goal to state space
+                _batch_next_goal *= 22.
                 y_true = batch_reward_tensor + _GAMMA * self.high_q_tar(torch.concat([batch_high_next_state_tensor, _batch_next_goal], dim=1))
                 high_q_loss = torch.mean(torch.square(y_true - self.high_q(torch.concat([batch_high_state_tensor, batch_next_state_tensor[:, :2]], dim=1)))) 
                 high_q_loss_accum += high_q_loss.tolist()
@@ -567,7 +582,8 @@ class HiearchicalGaussianprocessDiffusionQlearning:
                 self.low_q_optimizer.zero_grad()
                 _batch_next_action = self.low_policy_tar(torch.concat([batch_state_tensor, _batch_next_goal], dim=1))
                 _batch_euc_score = torch.sqrt(torch.sum(torch.square(batch_high_next_state_tensor[:, :2] - _batch_next_goal), dim=1))
-                _low_q_target = _batch_euc_score + _GAMMA * self.low_q_tar(torch.concat([batch_next_state_tensor, _batch_next_action]))
+                _batch_euc_score = _batch_euc_score.reshape(-1, 1)
+                _low_q_target = _batch_euc_score + _GAMMA * self.low_q_tar(torch.concat([batch_next_state_tensor, _batch_next_action], dim=1))
                 low_q_loss = torch.mean(torch.square(_low_q_target - self.low_q_tar(torch.concat([batch_state_tensor, batch_action_tensor], dim=1))))
                 low_q_loss_accum += low_q_loss.tolist()
                 low_q_loss.backward(retain_graph=True)
@@ -575,8 +591,11 @@ class HiearchicalGaussianprocessDiffusionQlearning:
                 
                 # --------------------------------- Low-level Policy Learning --------------------------------- 
                 self.low_policy_optimizer.zero_grad()
-                a_pred = self.low_policy(torch.concat([batch_state_tensor, batch_next_state_tensor[:, :2]], dim=1))
-                low_policy_loss = -self.low_q(torch.concat([batch_state_tensor, a_pred], dim=1)) + (10 * torch.mean(torch.square(a_pred - batch_action_tensor)))
+                goal_pred = self.predict2(state=batch_high_state_tensor, size=_batch_size, guide=True, target=False).view(-1, self.GOAL_DIM)
+                goal_pred *= 22.
+                a_pred = self.low_policy(torch.concat([batch_state_tensor, goal_pred], dim=1))
+                low_policy_loss = -self.low_q(torch.concat([batch_state_tensor, a_pred], dim=1)) + (10 * torch.mean(torch.square(a_pred - batch_action_tensor), dim=1, keepdim=True))
+                low_policy_loss = torch.mean(low_policy_loss)
                 low_policy_loss_accum += low_policy_loss.tolist()
                 low_policy_loss.backward(retain_graph=True)
                 self.low_policy_optimizer.step()
@@ -598,11 +617,11 @@ class HiearchicalGaussianprocessDiffusionQlearning:
             if (self.training_record % 1) == 0:
                 _gp_loss = self.gp_model.myTraining(total_epoch=10 if self.gp_model_type == 'sparse' else 10, ft=False)
 
-            # Update Altered observation for every ... epoch.
-            if self.training_record % 5 == 0:
-                # self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
-                self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train_org)
-                # _gp_loss = self.gp_model.myTraining(total_epoch=100, ft=False)
+            # # Update Altered observation for every ... epoch.
+            # if self.training_record % 5 == 0:
+            #     # self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train)
+            #     self.gp_model.y_train = self.getAlteredObservation(self.gp_model.x_train_org)
+            #     # _gp_loss = self.gp_model.myTraining(total_epoch=100, ft=False)
 
 
             # Append loss for recording.
