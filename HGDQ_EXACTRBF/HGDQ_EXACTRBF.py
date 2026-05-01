@@ -39,6 +39,7 @@ class HiearchicalGaussianprocessDiffusionQlearning:
         #     self.final_goal = torch.tensor([0.36824249435748196, 9.156394661806964], dtype=torch.float32)
         
         self.final_goal = torch.tensor([20.36824249435748, 21.156394661806964], dtype=torch.float32)
+        self.final_goal = (self.final_goal / 22)*2 - 1
         
         # Initialise replay buffers
         self.state_buffer = torch.tensor(dataset['observations'], dtype=torch.float32)        # State buffer (unnormalised)
