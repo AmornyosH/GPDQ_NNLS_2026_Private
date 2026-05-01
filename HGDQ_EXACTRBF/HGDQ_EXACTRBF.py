@@ -50,7 +50,7 @@ class HiearchicalGaussianprocessDiffusionQlearning:
         self.MINIBATCH_SIZE = 256
 
         # Initialise Diffusion Model's Parameters
-        self.initialiseDiffusionParams(schedule='vp', beta_min=1, beta_max=10, num_step=params_dict['diffusion_step'], dec_step=params_dict['diffusion_step'])
+        self.initialiseDiffusionParams(schedule='vp', beta_min=0.1, beta_max=1, num_step=params_dict['diffusion_step'], dec_step=params_dict['diffusion_step'])
 
         # Initialise Paths
         if platform == 'linux':
@@ -59,7 +59,6 @@ class HiearchicalGaussianprocessDiffusionQlearning:
         elif platform == 'win32':
             self.training_record_path = 'C:/Amornyos/PhD/resources/training_records/{}/{}/{}_{}_training_records'.format(self.ALG, self.ENV_CONFIG, self.ALG, self.ENV_CONFIG)
             self.testing_record_path = 'C:/Amornyos/PhD/resources/test_results/{}/{}_{}_test_results'.format(self.ALG, self.ENV_CONFIG, self.ALG, self.ENV_CONFIG)
-        
     
         # Initialise neural networks
         self.EPSILON_INPUT_DIM = self.high_state_dim + self.GOAL_DIM + self.POS_DIM
@@ -70,6 +69,7 @@ class HiearchicalGaussianprocessDiffusionQlearning:
         # High-level policy
         # self.epsilon_beh = my_NN.MLP(input_dim=self.EPSILON_INPUT_DIM, output_dim=self.GOAL_DIM)
         self.epsilon_beh = my_NN.MLP(input_dim=self.EPSILON_BEH_INPUT_DIM, output_dim=self.GOAL_DIM)
+        # self.epsilon_beh = my_NN.LNResNet(input_dim=self.EPSILON_BEH_INPUT_DIM, output_dim=self.GOAL_DIM, dropout_rate=0.1, layer_norm_use=True)
         # Low-level policy
         self.low_policy = my_NN.MLP_Relu(input_dim=self.LOW_POLICY_INPUT_DIM, output_dim=self.ACTION_DIM, tanh_output=True)
         # Value networks
@@ -424,7 +424,7 @@ class HiearchicalGaussianprocessDiffusionQlearning:
             # self.epsilon_optimizer.zero_grad()
             residual_noise = self.epsilon_beh(inputs)
             # Compute for the MSE.
-            _diffu_loss = torch.mean(torch.square(y_true - residual_noise), dim=1, keepdim=True)
+            _diffu_loss = torch.sum(torch.square(y_true - residual_noise), dim=1, keepdim=True)
             return _diffu_loss, _diffu_loss.grad
 
         # Extract dataset
@@ -457,7 +457,7 @@ class HiearchicalGaussianprocessDiffusionQlearning:
                 self.epsilon_optimizer.zero_grad()
                 rand_t = torch.randint(low=0, high=self.DIFFU_STEPS, size=[_batch_size])
                 encode_t_tensor = self.POS_EMB[rand_t]  # Retrieve
-                epsilon_tensor = torch.normal(mean=self.DIFFU_MEAN, std=self.DIFFU_STD, size=[_batch_size, self.ACTION_DIM])
+                epsilon_tensor = torch.normal(mean=self.DIFFU_MEAN, std=self.DIFFU_STD, size=[_batch_size, self.GOAL_DIM])
 
                 # Original
                 forward_action_tensor = self.forwardProcess(data=batch_action_tensor, epsilon=epsilon_tensor, step=rand_t)

@@ -296,7 +296,7 @@ elif args.task == 'gp_training':
 elif args.task == 'testing':
     # plt.plot(agent.gp_model.x_train[:, 0].tolist(), agent.gp_model.x_train[:, 1].tolist())
     # plt.show()
-    j = 300000
+    j = 10000
     _reward_append = []
     while j <= 1000000:
         _increment = 10000

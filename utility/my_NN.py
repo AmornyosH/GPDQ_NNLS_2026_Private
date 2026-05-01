@@ -3,7 +3,7 @@ import torch
 class MLP(torch.nn.Module):
     def __init__(self, input_dim, output_dim, tanh_output:bool=False):
         super(MLP, self).__init__()
-        num_nodes = 256
+        num_nodes = 512
         self.fc1 = torch.nn.Linear(input_dim, num_nodes)
         self.fc2 = torch.nn.Linear(num_nodes, num_nodes)
         self.fc3 = torch.nn.Linear(num_nodes, num_nodes)
@@ -103,7 +103,7 @@ class LNResNet(torch.nn.Module):
         if self.dropout_rate > 0:
             _data = torch.nn.Dropout(p=self.dropout_rate)(_data)
         if self.layer_norm_use:
-            _data = torch.nn.LayerNorm()(_data)
+            _data = torch.nn.LayerNorm(self.num_nodes)(_data)
         _data = self.fc2(_data)
         _data = torch.nn.functional.relu(_data)
         _data = self.fc3(_data)
@@ -113,7 +113,7 @@ class LNResNet(torch.nn.Module):
         if self.dropout_rate > 0:
             _data = torch.nn.Dropout(p=self.dropout_rate)(_data)
         if self.layer_norm_use:
-            _data = torch.nn.LayerNorm()(_data)
+            _data = torch.nn.LayerNorm(self.num_nodes)(_data)
         _data = self.fc4(_data)
         _data = torch.nn.functional.relu(_data)
         _data = self.fc5(_data)
@@ -123,7 +123,7 @@ class LNResNet(torch.nn.Module):
         if self.dropout_rate > 0:
             _data = torch.nn.Dropout(p=self.dropout_rate)(_data)
         if self.layer_norm_use:
-            _data = torch.nn.LayerNorm()(_data)
+            _data = torch.nn.LayerNorm(self.num_nodes)(_data)
         _data = self.fc6(_data)
         _data = torch.nn.functional.relu(_data)
         _data = self.fc7(_data)
