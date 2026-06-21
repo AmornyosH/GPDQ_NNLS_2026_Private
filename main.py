@@ -1,5 +1,6 @@
 # =================================================== Modules ==================================================
-from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning
+from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning as GPDQ_EXACTRBF
+from GPDQ_DKLRBF.GPDQ_DKLRBF import GaussianProcessDiffusionQlearning as GPDQ_DKLRBF
 from utility import dataset_preprocessing
 
 import os
@@ -29,7 +30,7 @@ def addArguments(parser):
     parser.add_argument('--rendering', default='no-render', help='Rendering: [render, no-render], default:no-render')
 
 def getParamsDict(env):
-    return {'simple_sine' : {'environment': 'simple_sine', 'horizon': (4*np.pi//0.05)//2, 'gp_num_sample': 125, 'gp_num_inducing': 25, 'gp_batch_size': 25, 'state_dim': 1, 'action_dim': 1, 'normalise_reward': False,'diffusion_step': 25, 'task': TASK}, 
+    return {'simple_sine' : {'environment': 'simple_sine', 'horizon': (4*np.pi//0.05)//2, 'gp_num_sample': 125, 'gp_num_inducing': 25, 'gp_batch_size': 25, 'state_dim': 1, 'action_dim': 1, 'normalise_reward': False,'diffusion_step': 25, 'task': TASK},
             'walker2d-medium-expert-v2' :  {'environment': 'walker2d-medium-expert-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
             'walker2d-medium-replay-v2' :  {'environment': 'walker2d-medium-replay-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 100, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
             'walker2d-medium-v2' :  {'environment': 'walker2d-medium-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 1024, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
@@ -226,7 +227,17 @@ else:
 
 
 # -------------------------------------- Create the agent ------------------------------------------------------
-agent = GaussianProcessDiffusionQlearning(params_dict=params_dict[args.env], dataset=dataset)
+# DKL params applied on top of the base params_dict (emb_dim key is ignored by EXACTRBF and vice-versa)
+_DKL_EMB = {'halfcheetah': 6, 'antmaze': 4, 'maze2d': 4}
+_dkl_emb_dim = next((v for k, v in _DKL_EMB.items() if k in args.env), 4)
+_dkl_kernel  = 'matern32' if ('antmaze' in args.env or 'maze2d' in args.env) else 'matern52'
+
+_agent_params = dict(params_dict[args.env])
+if args.alg == 'GPDQ_DKL':
+    _agent_params.update({'emb_dim': _dkl_emb_dim, 'kernel_fn': _dkl_kernel})
+    agent = GPDQ_DKLRBF(params_dict=_agent_params, dataset=dataset)
+else:
+    agent = GPDQ_EXACTRBF(params_dict=_agent_params, dataset=dataset)
 # --------------------------------------------------------------------------------------------------------------
 
 
