@@ -214,11 +214,14 @@ class myExactGP(torch.nn.Module):
                             _L.T,
                             torch.linalg.solve_triangular(_L, _batch_y, upper=False),
                             upper=True)
-                _mll = (-0.5 * _batch_y.T @ _alpha) \
-                       - torch.sum(torch.log(torch.diagonal(_L))) \
-                       - (_batch_size * torch.log(torch.tensor(2 * torch.pi)) / 2)
-                _mll = -_mll.mean()
-                _mll.backward(retain_graph=True)
+                # Multi-output MLL (independent GPs per action dim, shared kernel K):
+                #   data-fit = -½ tr(Yᵀ K⁻¹ Y)  [trace, not .mean() — avoids off-diagonal terms]
+                #   log-det  = -action_dim · Σ log diag(L)
+                _data_fit = -0.5 * torch.trace(_batch_y.T @ _alpha)
+                _logdet   = -self.y_dim * torch.sum(torch.log(torch.diagonal(_L)))
+                _const    = -(self.y_dim * _batch_size / 2.0) * torch.log(torch.tensor(2 * torch.pi))
+                _mll = -(_data_fit + _logdet + _const)
+                _mll.backward()   # no retain_graph: graph rebuilt each step
                 self.optimizer.step()
                 self.mll_append.append(_mll.item())
 

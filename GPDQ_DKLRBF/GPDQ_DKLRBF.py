@@ -148,11 +148,16 @@ class GaussianProcessDiffusionQlearning:
         self.gp_model.load_state_dict(_loaded_training_record['gp_state_dict'])
         self.gp_model.x_train = _loaded_training_record['gp_x_train']
         self.gp_model.y_train = _loaded_training_record['gp_y_train']
+        # Restore org copies (positionally aligned with x_train; used in getAlteredObservation)
+        if 'gp_x_train_org' in _loaded_training_record:
+            self.gp_model.x_train_org = _loaded_training_record['gp_x_train_org']
+            self.gp_model.y_train_org = _loaded_training_record['gp_y_train_org']
         # Recompute cached embedding + kernel with the restored feature net
         with torch.no_grad():
             self.gp_model.z_train = self.gp_model.feature_net(self.gp_model.x_train)
         self.gp_model.K = self.gp_model.kernel(
             Z_1=self.gp_model.z_train, Z_2=self.gp_model.z_train, noise=True)
+        self.gp_model._cache_stale = False
 
     # Diffusion model's parameters initialisation Method
     def initialiseDiffusionParams(self, schedule='vp', beta_min=0.1, beta_max=10, num_step=50, dec_step=10):
@@ -511,10 +516,13 @@ class GaussianProcessDiffusionQlearning:
             'epsilon_beh_optimizer':   self.epsilon_optimizer.state_dict(),
             'q_1_optimizer':           self.q_1_optimizer.state_dict(),
             'q_2_optimizer':           self.q_2_optimizer.state_dict(),
-            # gp_state_dict includes FeatureNet + sigma_n + ell (via nn.Module.state_dict())
+            # gp_state_dict includes FeatureNet + log_sigma_p + sigma_n + ell
             'gp_state_dict':   self.gp_model.state_dict(),
             'gp_loss_append':  self.gp_model.mll_append,
             'gp_x_train':      self.gp_model.x_train,
             'gp_y_train':      self.gp_model.y_train,
+            # org copies must survive reload so getAlteredObservation targets stay aligned
+            'gp_x_train_org':  self.gp_model.x_train_org,
+            'gp_y_train_org':  self.gp_model.y_train_org,
             'gp_optimizer':    self.gp_model.optimizer.state_dict(),
         }, path)
