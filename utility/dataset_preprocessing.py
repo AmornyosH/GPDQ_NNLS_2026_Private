@@ -152,10 +152,12 @@ def datasetPreprocessingMaze(dataset, obs_tuned:bool=False, reward_tuned:bool=Fa
         mean_obs = None
         std_obs = None
 
+    # Mark goal-reaching transitions terminal BEFORE the reward shift
+    # (after `rewards -= 1`, goal rewards become 0 and `rewards > 0` is never True)
+    _goal_mask = rewards > 0
     if reward_tuned:
         rewards -= 1
-
-    terminals[rewards>0] = True
+    terminals[_goal_mask] = True
     # print(obs[np.where(terminals==True), :2])
     # # Handle episode boundaries: next_obs after terminal is meaningless, optional to zero out
     # next_obs[terminals==1] = 0.0

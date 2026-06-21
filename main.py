@@ -1,18 +1,5 @@
 # =================================================== Modules ==================================================
-# from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning 
-# from GPDQ_SVGPRBF.GPDQ_SVGPRBF import GaussianProcessDiffusionQlearning
-from GPDQ_EXACTNZMRBF.GPDQ_EXACTNZMRBF import GaussianProcessDiffusionQlearning
-# from GPDP_EXACTRBF.GPDP_EXACTRBF import GaussianProcessDiffusionQlearning
-# from GPDQ_DOUBLEQEXACTRBF.GPDQ_DOUBLEQEXACTRBF import GaussianProcessDiffusionQlearning
-# from GPDP_EXACTMATERN.GPDP_EXACTMATERN import GaussianProcessDiffusionQlearning
-# from GPDQ_EXACTMATERN.GPDQ_EXACTMATERN import GaussianProcessDiffusionQlearning
-# from GPDQ_EXACTMATERN2.GPDQ_EXACTMATERN2 import GaussianProcessDiffusionQlearning
-# from GPDQ_EXACTNZMRBF2.GPDQ_EXACTNZMRBF2 import GaussianProcessDiffusionQlearning
-# from GPDQ_EXACTNZMRBF3.GPDQ_EXACTNZMRBF3 import GaussianProcessDiffusionQlearning
-# from GPDP_DKLRBF.GPDP_DKLRBF import GaussianProcessDiffusionQlearning
-# from GPDQ_SVGPRBF.GPDQ_SVGPRBF import GaussianProcessDiffusionQlearning
-# from GPDQ_EXACTNZMMATERN.GPDQ_EXACTNZMMATERN import GaussianProcessDiffusionQlearning
-from HGDQ_EXACTRBF.HGDQ_EXACTRBF import HiearchicalGaussianprocessDiffusionQlearning
+from GPDQ_EXACTRBF.GPDQ_EXACTRBF import GaussianProcessDiffusionQlearning
 from utility import dataset_preprocessing
 
 import os
@@ -52,13 +39,13 @@ def getParamsDict(env):
             'hopper-medium-replay-v2' :  {'environment': 'hopper-medium-replay-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 11, 'action_dim': 3, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
             'hopper-medium-v2' :  {'environment': 'hopper-medium-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 11, 'action_dim': 3, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
             'hopper-random-v2' :  {'environment': 'hopper-random-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 11, 'action_dim': 3, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
-            'halfcheetah-medium-expert-v2' :  {'environment': 'halfcheetah-medium-expert-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
-            'halfcheetah-medium-replay-v2' :  {'environment': 'halfcheetah-medium-replay-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
-            'halfcheetah-medium-v2' :  {'environment': 'halfcheetah-medium-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
-            'halfcheetah-random-v2' :  {'environment': 'halfcheetah-random-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
-            'antmaze-umaze-v0' :  {'environment': 'antmaze-umaze-v0', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 29, 'action_dim': 8, 'goal_dim': 2, 'normalise_obs': False, 'normalise_reward': False, 'diffusion_step': 5, 'task': TASK},
-            'antmaze-umaze-diverse-v0' :  {'environment': 'antmaze-umaze-diverse-v0', 'horizon': 1000, 'gp_num_sample': 2000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 29, 'action_dim': 8, 'goal_dim': 2, 'normalise_obs': False, 'normalise_reward': False, 'diffusion_step': 5, 'task': TASK},
-            'antmaze-medium-play-v0' :  {'environment': 'antmaze-medium-play-v0', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 29, 'action_dim': 8, 'goal_dim': 2, 'normalise_obs': False, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
+            'halfcheetah-medium-expert-v2' :  {'environment': 'halfcheetah-medium-expert-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK, 'kernel_fn': 'matern52', 'gp_x_dim': 3},
+            'halfcheetah-medium-replay-v2' :  {'environment': 'halfcheetah-medium-replay-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK, 'kernel_fn': 'matern52', 'gp_x_dim': 3},
+            'halfcheetah-medium-v2' :  {'environment': 'halfcheetah-medium-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_obs': True, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK, 'kernel_fn': 'matern52', 'gp_x_dim': 3},
+            'halfcheetah-random-v2' :  {'environment': 'halfcheetah-random-v2', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 17, 'action_dim': 6, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK, 'kernel_fn': 'matern52', 'gp_x_dim': 3},
+            'antmaze-umaze-v0' :  {'environment': 'antmaze-umaze-v0', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 29, 'action_dim': 8, 'goal_dim': 2, 'normalise_obs': False, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK, 'gamma': 0.99, 'lambda_gp': 0.3, 'kernel_fn': 'matern32', 'gp_x_dim': 2},
+            'antmaze-umaze-diverse-v0' :  {'environment': 'antmaze-umaze-diverse-v0', 'horizon': 1000, 'gp_num_sample': 2000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 29, 'action_dim': 8, 'goal_dim': 2, 'normalise_obs': False, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK, 'gamma': 0.99, 'lambda_gp': 0.3, 'kernel_fn': 'matern32', 'gp_x_dim': 2},
+            'antmaze-medium-play-v0' :  {'environment': 'antmaze-medium-play-v0', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 29, 'action_dim': 8, 'goal_dim': 2, 'normalise_obs': False, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK, 'gamma': 0.99, 'lambda_gp': 0.2, 'kernel_fn': 'matern32', 'gp_x_dim': 2},
             'maze2d-umaze-v1' :  {'environment': 'maze2d-umaze-v1', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 4, 'action_dim': 2, 'goal_dim': 2, 'normalise_obs': False, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
             'maze2d-medium-v1' :  {'environment': 'maze2d-medium-v1', 'horizon': 1000, 'gp_num_sample': 1000, 'gp_num_inducing': 1000, 'gp_batch_size': 256, 'state_dim': 4, 'action_dim': 2, 'goal_dim': 2, 'normalise_obs': False, 'normalise_reward': True, 'diffusion_step': 5, 'task': TASK},
            }
@@ -87,7 +74,7 @@ def interactionMuJoCo(agent, seed, random:bool=False) -> float:
             if params_dict[args.env]['normalise_obs']:
                 state = (state - mean_obs) / (std_obs + 1e-08)
 
-            action = agent.predict(state=state, size=1).detach().cpu().tolist() # Change to cpu memories and make it a list
+            action = agent.predict(state=state, size=1, use_ema=True).detach().cpu().tolist()
             # action = agent.getAlteredObservation_old(states=torch.tensor(np.reshape(state, [-1, agent.STATE_DIM]), dtype=torch.float32)).detach().cpu().tolist()
             # action = agent.predict(state=state, size=1, guide=False).detach().cpu().tolist()
             action = np.squeeze(action)
@@ -158,7 +145,7 @@ def evaluatingMuJoCo(eval_times:int=10, step:int=0):
         # ========== Start the program
         # Check for the rendering
         # Run evaluated policy
-        for _ in range(1 if not 'maze2d' or not 'antmaze' in args.env else 10):
+        for _ in range(10 if 'maze2d' in args.env or 'antmaze' in args.env else 1):
             _, _, reward_exps, _ = interactionMuJoCo(agent, _TEST_SEEDS[e], random=False)
             # _, _, reward_exps, _ = interactionMuJoCo(agent, seed, random=False)
             # _, _, random_reward_exps, _ = interactionMuJoCo(agent, _TEST_SEEDS[e], random=True)
@@ -227,7 +214,7 @@ env = gym.make(args.env)
 dataset = d4rl.qlearning_dataset(env)
 
 # Dataset Preprocessing
-if 'maze2d' or 'antmaze' in args.env:
+if 'maze2d' in args.env or 'antmaze' in args.env:
     dataset, mean_obs, std_obs = dataset_preprocessing.datasetPreprocessingMaze(dataset=dataset, 
                                                      obs_tuned=params_dict[args.env]['normalise_obs'], 
                                                      reward_tuned=params_dict[args.env]['normalise_reward'])
@@ -239,10 +226,7 @@ else:
 
 
 # -------------------------------------- Create the agent ------------------------------------------------------
-if args.alg == 'GPDQ':                                                                                        
-    agent = GaussianProcessDiffusionQlearning(params_dict=params_dict[args.env], dataset=dataset) 
-elif args.alg == 'HGDQ':                                                                                        
-    agent = HiearchicalGaussianprocessDiffusionQlearning(params_dict=params_dict[args.env], dataset=dataset) 
+agent = GaussianProcessDiffusionQlearning(params_dict=params_dict[args.env], dataset=dataset)
 # --------------------------------------------------------------------------------------------------------------
 
 
